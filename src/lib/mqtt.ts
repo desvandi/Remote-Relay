@@ -167,7 +167,7 @@ export function publishCommand(command: Record<string, unknown>): boolean {
 // ---------------------------------------------------------------------------
 // Subscribe to status updates (real-time push from ESP32)
 // ---------------------------------------------------------------------------
-export function onStatus(cb: StatusCallback): () => void {
+export function onStatusChange(cb: StatusCallback): () => void {
   statusCallbacks.add(cb);
   return () => statusCallbacks.delete(cb);
 }
