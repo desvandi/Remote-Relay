@@ -32,6 +32,9 @@ export async function POST(req: NextRequest) {
     return fail('Username and password required');
   }
 
+  // Ensure mock store is initialized before credential check
+  await getStore();
+
   const valid = verifyCredentials(username, password);
   if (!valid) {
     let e = rateMap.get(ip);

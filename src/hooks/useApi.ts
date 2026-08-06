@@ -68,6 +68,22 @@ export function useRelayMutation() {
   });
 }
 
+// ---------- Channel rename ----------
+export function useRenameChannel() {
+  const qc = useQueryClient();
+  const { t } = useLanguage();
+  return useMutation({
+    mutationFn: ({ channelId, name }: { channelId: number; name: string }) =>
+      api.channelRename(channelId, name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['config'] });
+      qc.invalidateQueries({ queryKey: ['status'] });
+      toast.success(t('toast.saved'));
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : t('toast.error')),
+  });
+}
+
 // ---------- Schedule mutation ----------
 export function useScheduleMutation() {
   const qc = useQueryClient();

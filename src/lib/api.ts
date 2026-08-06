@@ -101,6 +101,8 @@ export const api = {
   // Mutations
   relay: (mutation: import('@/lib/types').RelayMutation) =>
     request<{ channel: import('@/lib/types').Channel }>('/api/relay', { method: 'POST', body: mutation }),
+  channelRename: (channelId: number, name: string) =>
+    request<{ channel: { id: number; name: string } }>('/api/channel', { method: 'POST', body: { channelId, name } }),
   schedule: (sched: import('@/lib/types').Schedule) =>
     request<{ schedule: import('@/lib/types').Schedule }>('/api/schedule', { method: 'POST', body: sched }),
   scheduleDelete: (id: number) =>

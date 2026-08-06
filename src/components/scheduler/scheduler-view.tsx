@@ -2,19 +2,26 @@
 
 import { useState } from 'react';
 import { useLanguage } from '@/components/providers/language-provider';
-import { useConfig, useScheduleMutation, useScheduleDelete } from '@/hooks/useApi';
+import {
+  useConfig,
+  useScheduleMutation,
+  useScheduleDelete,
+  useRenameChannel,
+} from '@/hooks/useApi';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Plus, Trash2, Save, CalendarClock } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Plus, Trash2, Save, CalendarClock, Pencil, Check, X, Zap,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DAY_KEYS, dayMaskToDays, daysToDayMask } from '@/lib/format';
-import type { Schedule } from '@/lib/types';
+import type { Schedule, Channel } from '@/lib/types';
 import { toast } from 'sonner';
 
 export function SchedulerView() {
@@ -26,7 +33,10 @@ export function SchedulerView() {
     return (
       <div className="space-y-6">
         <Skeleton className="h-12 w-64" />
-        <Skeleton className="h-96 rounded-xl" />
+        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
+          <Skeleton className="h-96 rounded-xl" />
+          <Skeleton className="h-96 rounded-xl" />
+        </div>
       </div>
     );
   }
@@ -38,69 +48,293 @@ export function SchedulerView() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t('scheduler.title')}</h1>
-          <p className="text-sm text-muted-foreground mt-1">{t('scheduler.subtitle')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">{t('scheduler.select_channel')}</Label>
-          <Select value={String(selectedChannel)} onValueChange={(v) => setSelectedChannel(Number(v))}>
-            <SelectTrigger className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {channels.map((ch) => (
-                <SelectItem key={ch.id} value={String(ch.id)}>
-                  CH{String(ch.id).padStart(2, '0')} · {ch.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">{t('scheduler.title')}</h1>
+        <p className="text-sm text-muted-foreground mt-1">{t('scheduler.subtitle')}</p>
       </div>
 
-      {/* Channel info banner */}
-      <Card className="border-border/60 bg-card/50">
-        <CardContent className="p-4 flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <p className="text-sm font-semibold">{channel.name}</p>
-            <p className="text-xs text-muted-foreground">
-              Channel {channel.id} · {schedules.length}/4 schedules · Mode: {channel.modeAuto ? 'Auto' : 'Manual'}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
-            <Badge variant="outline">MAX 4 schedules</Badge>
-            {channel.pirEnabled && <Badge variant="outline" className="text-status-warn border-status-warn/30">PIR Override Active</Badge>}
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
+        {/* Channel sidebar */}
+        <ChannelSidebar
+          channels={channels}
+          schedules={config.schedules}
+          selectedId={selectedChannel}
+          onSelect={setSelectedChannel}
+        />
 
-      {/* Schedules list */}
-      <div className="space-y-3">
-        {schedules.length === 0 && (
-          <Card className="border-dashed">
-            <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              <CalendarClock className="w-8 h-8 mx-auto mb-2 opacity-50" />
-              {t('scheduler.empty')}
-            </CardContent>
-          </Card>
-        )}
-        {schedules.map((s) => (
-          <ScheduleRow key={s.id} schedule={s} channelName={channel.name} />
-        ))}
+        {/* Right column: rename + schedules + preview */}
+        <div className="space-y-4 min-w-0">
+          <ChannelHeaderCard channel={channel} scheduleCount={schedules.length} />
+          <SchedulesList schedules={schedules} channel={channel} />
+          {schedules.length < 4 && <AddScheduleCard channelId={selectedChannel} />}
+          <WeeklyPreview schedules={schedules} />
+        </div>
       </div>
-
-      {/* Add new schedule */}
-      {schedules.length < 4 && <AddScheduleCard channelId={selectedChannel} />}
-
-      {/* Weekly preview */}
-      <WeeklyPreview schedules={schedules} />
     </div>
   );
 }
 
-function ScheduleRow({ schedule, channelName }: { schedule: Schedule; channelName: string }) {
+// =============================================================================
+// Channel sidebar — pick from 12 channels, show schedule count + status
+// =============================================================================
+function ChannelSidebar({
+  channels,
+  schedules,
+  selectedId,
+  onSelect,
+}: {
+  channels: Channel[];
+  schedules: Schedule[];
+  selectedId: number;
+  onSelect: (id: number) => void;
+}) {
+  const { t } = useLanguage();
+  return (
+    <Card className="border-border/60 lg:sticky lg:top-20 lg:self-start">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Zap className="w-4 h-4 text-primary" />
+          {t('scheduler.select_channel')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <ScrollArea className="h-[420px] lg:h-[60vh]">
+          <div className="px-2 pb-2 space-y-1">
+            {channels.map((ch) => {
+              const chScheds = schedules.filter((s) => s.channelId === ch.id);
+              const active = ch.id === selectedId;
+              return (
+                <button
+                  key={ch.id}
+                  onClick={() => onSelect(ch.id)}
+                  className={cn(
+                    'w-full text-left px-3 py-2.5 rounded-lg border transition-colors group',
+                    active
+                      ? 'bg-primary/10 border-primary/30'
+                      : 'border-transparent hover:bg-muted/60'
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn(
+                          'text-[10px] font-mono',
+                          active ? 'text-primary' : 'text-muted-foreground'
+                        )}>
+                          CH{String(ch.id).padStart(2, '0')}
+                        </span>
+                        {ch.hasPir && (
+                          <Badge variant="outline" className="text-[9px] h-4 px-1 py-0 text-status-warn border-status-warn/30">
+                            PIR
+                          </Badge>
+                        )}
+                      </div>
+                      <p className={cn(
+                        'text-sm font-medium truncate mt-0.5',
+                        active ? 'text-foreground' : 'text-muted-foreground'
+                      )}>
+                        {ch.name}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                      <span className={cn(
+                        'text-[10px] font-mono',
+                        chScheds.length === 0 ? 'text-muted-foreground/60' : 'text-foreground'
+                      )}>
+                        {chScheds.length}/4
+                      </span>
+                      <span className={cn(
+                        'text-[9px] uppercase tracking-wide',
+                        ch.modeAuto ? 'text-status-on' : 'text-status-info'
+                      )}>
+                        {ch.modeAuto ? t('dashboard.mode_auto') : t('dashboard.mode_manual')}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </ScrollArea>
+      </CardContent>
+    </Card>
+  );
+}
+
+// =============================================================================
+// ChannelHeaderCard — inline-renameable name + meta info
+// =============================================================================
+function ChannelHeaderCard({ channel, scheduleCount }: { channel: Channel; scheduleCount: number }) {
+  const { t } = useLanguage();
+  const renameMut = useRenameChannel();
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState(channel.name);
+
+  // Sync draft when channel name changes externally (e.g., after rename success)
+  const [lastSeenName, setLastSeenName] = useState(channel.name);
+  if (channel.name !== lastSeenName) {
+    setLastSeenName(channel.name);
+    if (!editing) setDraftName(channel.name);
+  }
+
+  const dirty = draftName.trim() !== channel.name && draftName.trim().length > 0;
+
+  const onStartEdit = () => {
+    setDraftName(channel.name);
+    setEditing(true);
+  };
+
+  const onCancel = () => {
+    setDraftName(channel.name);
+    setEditing(false);
+  };
+
+  const onSave = () => {
+    if (!dirty) {
+      setEditing(false);
+      return;
+    }
+    renameMut.mutate(
+      { channelId: channel.id, name: draftName.trim() },
+      {
+        onSuccess: () => {
+          setEditing(false);
+          setLastSeenName(draftName.trim());
+        },
+        onError: () => {
+          setDraftName(channel.name);
+        },
+      }
+    );
+  };
+
+  return (
+    <Card className="border-border/60 bg-card/50">
+      <CardContent className="p-4 space-y-3">
+        {/* Channel ID + name (editable) */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <div className={cn(
+              'w-9 h-9 rounded-lg flex items-center justify-center font-mono text-xs font-bold',
+              channel.hasPir
+                ? 'bg-status-warn/15 text-status-warn border border-status-warn/30'
+                : 'bg-primary/10 text-primary border border-primary/20'
+            )}>
+              {String(channel.id).padStart(2, '0')}
+            </div>
+            <div className="flex flex-col leading-tight">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                Channel {channel.id}
+              </span>
+              {editing ? (
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <Input
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                    maxLength={32}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') onSave();
+                      if (e.key === 'Escape') onCancel();
+                    }}
+                    className="h-7 w-48 text-sm px-2"
+                    placeholder="Nama channel..."
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 text-status-on"
+                    onClick={onSave}
+                    disabled={!dirty || renameMut.isPending}
+                    title={t('common.save')}
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 text-muted-foreground"
+                    onClick={onCancel}
+                    title={t('common.cancel')}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  onClick={onStartEdit}
+                  className="group flex items-center gap-1.5 mt-0.5 text-left"
+                  title="Klik untuk mengganti nama"
+                >
+                  <span className="text-base font-semibold">{channel.name}</span>
+                  <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex-1" />
+
+          {/* Stats badges */}
+          <div className="flex items-center gap-2 text-xs">
+            <Badge variant="outline" className="font-mono">
+              {scheduleCount}/4 {t('scheduler.title').toLowerCase()}
+            </Badge>
+            <Badge
+              variant="outline"
+              className={channel.modeAuto
+                ? 'text-status-on border-status-on/30'
+                : 'text-status-info border-status-info/30'}
+            >
+              {channel.modeAuto ? t('dashboard.mode_auto') : t('dashboard.mode_manual')}
+            </Badge>
+            {channel.pirEnabled && (
+              <Badge variant="outline" className="text-status-warn border-status-warn/30">
+                PIR ON
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        {/* Helper text */}
+        <p className="text-xs text-muted-foreground">
+          {editing
+            ? 'Tekan Enter untuk simpan, Esc untuk batal. Nama tersimpan permanen di firmware.'
+            : 'Klik nama channel untuk mengganti sesuai beban sebenarnya (mis. "Lampu Tamu", "Pompa Air").'}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// =============================================================================
+// SchedulesList — empty state + list of ScheduleRow
+// =============================================================================
+function SchedulesList({ schedules, channel }: { schedules: Schedule[]; channel: Channel }) {
+  const { t } = useLanguage();
+  if (schedules.length === 0) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="p-8 text-center text-sm text-muted-foreground">
+          <CalendarClock className="w-8 h-8 mx-auto mb-2 opacity-50" />
+          {t('scheduler.empty')}
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {schedules.map((s) => (
+        <ScheduleRow key={s.id} schedule={s} channel={channel} />
+      ))}
+    </div>
+  );
+}
+
+// =============================================================================
+// ScheduleRow — single schedule editor
+// =============================================================================
+function ScheduleRow({ schedule, channel }: { schedule: Schedule; channel: Channel }) {
   const { t } = useLanguage();
   const mutation = useScheduleMutation();
   const deleteMutation = useScheduleDelete();
@@ -108,6 +342,32 @@ function ScheduleRow({ schedule, channelName }: { schedule: Schedule; channelNam
   const [offTime, setOffTime] = useState(schedule.offTime);
   const [days, setDays] = useState<boolean[]>(dayMaskToDays(schedule.dayMask));
   const [enabled, setEnabled] = useState(schedule.enabled);
+
+  // Reset local state if schedule identity changes (e.g., after channel switch)
+  const [lastSeenId, setLastSeenId] = useState(schedule.id);
+  const [lastSeenOnTime, setLastSeenOnTime] = useState(schedule.onTime);
+  const [lastSeenOffTime, setLastSeenOffTime] = useState(schedule.offTime);
+  const [lastSeenMask, setLastSeenMask] = useState(schedule.dayMask);
+  const [lastSeenEnabled, setLastSeenEnabled] = useState(schedule.enabled);
+
+  if (
+    schedule.id !== lastSeenId ||
+    schedule.onTime !== lastSeenOnTime ||
+    schedule.offTime !== lastSeenOffTime ||
+    schedule.dayMask !== lastSeenMask ||
+    schedule.enabled !== lastSeenEnabled
+  ) {
+    setLastSeenId(schedule.id);
+    setLastSeenOnTime(schedule.onTime);
+    setLastSeenOffTime(schedule.offTime);
+    setLastSeenMask(schedule.dayMask);
+    setLastSeenEnabled(schedule.enabled);
+    setOnTime(schedule.onTime);
+    setOffTime(schedule.offTime);
+    setDays(dayMaskToDays(schedule.dayMask));
+    setEnabled(schedule.enabled);
+  }
+
   const dirty = onTime !== schedule.onTime || offTime !== schedule.offTime ||
     daysToDayMask(days) !== schedule.dayMask || enabled !== schedule.enabled;
 
@@ -136,14 +396,24 @@ function ScheduleRow({ schedule, channelName }: { schedule: Schedule; channelNam
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-2">
             <span className="font-mono text-xs text-muted-foreground">#{schedule.id}</span>
-            <span>{channelName}</span>
+            <span className="text-muted-foreground">·</span>
+            <span className="font-mono text-xs text-muted-foreground">CH{String(channel.id).padStart(2, '0')}</span>
+            <span className="text-muted-foreground">·</span>
+            <span className="font-medium truncate max-w-40">{channel.name}</span>
             <Badge variant={enabled ? 'default' : 'outline'} className="text-[10px] h-5">
               {enabled ? t('common.enabled') : t('common.disabled')}
             </Badge>
           </CardTitle>
           <div className="flex items-center gap-2">
             <Switch checked={enabled} onCheckedChange={setEnabled} />
-            <Button variant="ghost" size="icon" onClick={onDelete} disabled={deleteMutation.isPending} className="h-8 w-8 text-muted-foreground hover:text-destructive">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onDelete}
+              disabled={deleteMutation.isPending}
+              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+              title={t('common.delete')}
+            >
               <Trash2 className="w-4 h-4" />
             </Button>
           </div>
@@ -196,6 +466,9 @@ function ScheduleRow({ schedule, channelName }: { schedule: Schedule; channelNam
   );
 }
 
+// =============================================================================
+// AddScheduleCard — form for new schedule
+// =============================================================================
 function AddScheduleCard({ channelId }: { channelId: number }) {
   const { t } = useLanguage();
   const mutation = useScheduleMutation();
@@ -269,6 +542,9 @@ function AddScheduleCard({ channelId }: { channelId: number }) {
   );
 }
 
+// =============================================================================
+// WeeklyPreview — visual 24×7 grid
+// =============================================================================
 function WeeklyPreview({ schedules }: { schedules: Schedule[] }) {
   const { t } = useLanguage();
   if (schedules.length === 0) return null;

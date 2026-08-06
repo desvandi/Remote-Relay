@@ -62,11 +62,30 @@ type StoreState = {
   pirStartupTime: number;
 };
 
-let state: StoreState | null = null;
-let logs: ActivityLog[] = [];
-let nextLogId = 1;
-let nextScheduleId = 1;
-let persistTimer: NodeJS.Timeout | null = null;
+// Use globalThis to survive Next.js dev module hot-reloads.
+// Without this, every HMR cycle resets `state` to null and reloads from disk,
+// racing with in-flight requests and overwriting recent mutations.
+type GlobalStore = {
+  state: StoreState | null;
+  logs: ActivityLog[];
+  nextLogId: number;
+  nextScheduleId: number;
+  pirSimTimer: NodeJS.Timeout | null;
+  persistTimer: NodeJS.Timeout | null;
+  recomputeTimer: NodeJS.Timeout | null;
+};
+
+const G: GlobalStore = ((globalThis as unknown as { __timer12Store?: GlobalStore }).__timer12Store) ?? (
+  (globalThis as unknown as { __timer12Store?: GlobalStore }).__timer12Store = {
+    state: null,
+    logs: [],
+    nextLogId: 1,
+    nextScheduleId: 1,
+    pirSimTimer: null,
+    persistTimer: null,
+    recomputeTimer: null,
+  }
+);
 
 // ---------- Helpers ----------
 function defaultChannels(): Channel[] {
@@ -101,10 +120,10 @@ function defaultSchedules(): Schedule[] {
   // A few starter schedules so the demo isn't empty
   const now = new Date();
   return [
-    { id: nextScheduleId++, channelId: 1, onTime: '18:00', offTime: '06:00', dayMask: 0, enabled: true },
-    { id: nextScheduleId++, channelId: 2, onTime: '19:00', offTime: '05:30', dayMask: 0b1111110, enabled: true }, // Mon-Sat
-    { id: nextScheduleId++, channelId: 5, onTime: '07:00', offTime: '08:30', dayMask: 0b1111110, enabled: true },
-    { id: nextScheduleId++, channelId: 8, onTime: '22:00', offTime: '05:00', dayMask: 0, enabled: true },
+    { id: G.nextScheduleId++, channelId: 1, onTime: '18:00', offTime: '06:00', dayMask: 0, enabled: true },
+    { id: G.nextScheduleId++, channelId: 2, onTime: '19:00', offTime: '05:30', dayMask: 0b1111110, enabled: true }, // Mon-Sat
+    { id: G.nextScheduleId++, channelId: 5, onTime: '07:00', offTime: '08:30', dayMask: 0b1111110, enabled: true },
+    { id: G.nextScheduleId++, channelId: 8, onTime: '22:00', offTime: '05:00', dayMask: 0, enabled: true },
   ];
 }
 
@@ -153,16 +172,16 @@ async function ensureDataDir() {
 }
 
 async function persist() {
-  if (!state) return;
+  if (!G.state) return;
   await ensureDataDir();
-  const data = JSON.stringify(state);
+  const data = JSON.stringify(G.state);
   await fs.writeFile(STATE_FILE, data, 'utf-8');
-  await fs.writeFile(LOG_FILE, JSON.stringify({ logs, nextLogId }), 'utf-8');
+  await fs.writeFile(LOG_FILE, JSON.stringify({ logs: G.logs, nextLogId: G.nextLogId }), 'utf-8');
 }
 
 function schedulePersist() {
-  if (persistTimer) clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
+  if (G.persistTimer) clearTimeout(G.persistTimer);
+  G.persistTimer = setTimeout(() => {
     persist().catch((err) => console.error('[mockStore] persist failed:', err));
   }, 2000);
 }
@@ -171,59 +190,59 @@ async function load() {
   await ensureDataDir();
   try {
     const raw = await fs.readFile(STATE_FILE, 'utf-8');
-    state = JSON.parse(raw) as StoreState;
+    G.state = JSON.parse(raw) as StoreState;
     // Reset boot time on reload (simulates fresh start)
-    state.bootTime = Date.now();
-    state.pirStartupTime = Date.now();
-    state.pirs = state.pirs.map((p) => ({
+    G.state.bootTime = Date.now();
+    G.state.pirStartupTime = Date.now();
+    G.state.pirs = G.state.pirs.map((p) => ({
       ...p,
       warmupUntil: Date.now() + 60_000,
       motionNow: false,
       stuckDetected: false,
     }));
   } catch {
-    state = defaultState();
+    G.state = defaultState();
   }
   try {
     const rawLogs = await fs.readFile(LOG_FILE, 'utf-8');
     const parsed = JSON.parse(rawLogs);
-    logs = parsed.logs || [];
-    nextLogId = parsed.nextLogId || 1;
+    G.logs = parsed.logs || [];
+    G.nextLogId = parsed.nextLogId || 1;
   } catch {
-    logs = [];
+    G.logs = [];
   }
-  // Cap logs to last 500
-  if (logs.length > 500) {
-    logs = logs.slice(-500);
+  // Cap G.logs to last 500
+  if (G.logs.length > 500) {
+    G.logs = G.logs.slice(-500);
   }
   // Reset daily counters if a new day has started
   resetDailyCountersIfNeeded();
 }
 
 function resetDailyCountersIfNeeded() {
-  if (!state) return;
+  if (!G.state) return;
   const today = new Date().toDateString();
-  const lastReset = (state as StoreState & { lastDailyReset?: string }).lastDailyReset;
+  const lastReset = (G.state as StoreState & { lastDailyReset?: string }).lastDailyReset;
   if (lastReset !== today) {
-    state.pirs = state.pirs.map((p) => ({ ...p, triggerCountToday: 0 }));
-    (state as StoreState & { lastDailyReset?: string }).lastDailyReset = today;
+    G.state.pirs = G.state.pirs.map((p) => ({ ...p, triggerCountToday: 0 }));
+    (G.state as StoreState & { lastDailyReset?: string }).lastDailyReset = today;
   }
 }
 
 // ---------- Log helpers ----------
 function appendLog(type: LogType, message: string, channelId: number | null = null) {
-  logs.push({
-    id: nextLogId++,
+  G.logs.push({
+    id: G.nextLogId++,
     timestamp: Date.now(),
     type,
     channelId,
     message,
   });
-  if (logs.length > 500) logs = logs.slice(-500);
+  if (G.logs.length > 500) G.logs = G.logs.slice(-500);
   schedulePersist();
 }
 
-// ---------- Relay state engine (mirrors firmware priority logic) ----------
+// ---------- Relay G.state engine (mirrors firmware priority logic) ----------
 function dayMaskMatches(dayMask: number, date: Date): boolean {
   if (dayMask === 0) return true; // every day
   // JS getDay: 0=Sun, 1=Mon, ... 6=Sat
@@ -253,11 +272,11 @@ function isScheduleActive(s: Schedule, now: Date): boolean {
 }
 
 function recomputeRelayStates() {
-  if (!state) return;
+  if (!G.state) return;
   const now = new Date();
   let changes: { channel: Channel; newState: boolean; newSource: RelaySource }[] = [];
 
-  state.channels.forEach((ch, idx) => {
+  G.state.channels.forEach((ch, idx) => {
     let newState = false;
     let newSource: RelaySource = 'off';
 
@@ -268,14 +287,14 @@ function recomputeRelayStates() {
     } else {
       // Auto mode: PIR > Schedule > Off
       if (ch.hasPir && ch.pirEnabled) {
-        const pir = state!.pirs.find((p) => p.channelId === ch.id);
+        const pir = G.state!.pirs.find((p) => p.channelId === ch.id);
         if (pir && pir.motionNow && Date.now() >= pir.warmupUntil) {
           newState = true;
           newSource = 'pir';
         }
       }
       if (!newState) {
-        const schedules = state!.schedules.filter((s) => s.channelId === ch.id);
+        const schedules = G.state!.schedules.filter((s) => s.channelId === ch.id);
         const active = schedules.find((s) => isScheduleActive(s, now));
         if (active) {
           newState = true;
@@ -287,10 +306,10 @@ function recomputeRelayStates() {
     if (newState !== ch.state) {
       changes.push({ channel: ch, newState, newSource });
     }
-    state!.channels[idx] = { ...ch, state: newState, source: newSource };
+    G.state!.channels[idx] = { ...ch, state: newState, source: newSource };
   });
 
-  // Log state changes
+  // Log G.state changes
   for (const c of changes) {
     appendLog(
       c.newState ? 'relay_on' : 'relay_off',
@@ -301,19 +320,18 @@ function recomputeRelayStates() {
 }
 
 // ---------- PIR simulation ----------
-let pirSimTimer: NodeJS.Timeout | null = null;
 
 function startPirSimulation() {
-  if (pirSimTimer) clearInterval(pirSimTimer);
-  pirSimTimer = setInterval(() => {
-    if (!state) return;
+  if (G.pirSimTimer) clearInterval(G.pirSimTimer);
+  G.pirSimTimer = setInterval(() => {
+    if (!G.state) return;
     const now = Date.now();
-    state.pirs.forEach((p, idx) => {
+    G.state.pirs.forEach((p, idx) => {
       // Skip during warmup
       if (now < p.warmupUntil) return;
       // Random motion trigger (~15% chance per check)
       if (!p.motionNow && Math.random() < 0.15) {
-        state!.pirs[idx] = {
+        G.state!.pirs[idx] = {
           ...p,
           motionNow: true,
           lastMotionAt: now,
@@ -322,15 +340,15 @@ function startPirSimulation() {
         appendLog('pir_trigger', `PIR ${p.id} motion detected (CH${p.channelId})`, p.channelId);
         // Auto-clear after holdTime
         setTimeout(() => {
-          if (state && state.pirs[idx]) {
-            state.pirs[idx] = { ...state.pirs[idx], motionNow: false };
+          if (G.state && G.state.pirs[idx]) {
+            G.state.pirs[idx] = { ...G.state.pirs[idx], motionNow: false };
           }
         }, p.holdTime * 1000);
       }
       // Stuck detection: motionNow HIGH for >30 min
       if (p.motionNow && p.lastMotionAt && now - p.lastMotionAt > 30 * 60 * 1000) {
         if (!p.stuckDetected) {
-          state!.pirs[idx] = { ...p, stuckDetected: true, motionNow: false };
+          G.state!.pirs[idx] = { ...p, stuckDetected: true, motionNow: false };
           appendLog('error', `PIR ${p.id} stuck detected (30min timeout) — forced OFF`, p.channelId);
         }
       }
@@ -341,19 +359,19 @@ function startPirSimulation() {
 
 // ---------- Public API ----------
 export async function getStore(): Promise<StoreState> {
-  if (!state) {
+  if (!G.state) {
     await load();
     startPirSimulation();
     // Initial relay computation
     recomputeRelayStates();
-    // Recompute every 30s (in case schedule state changes by minute)
+    // Recompute every 30s (in case schedule G.state changes by minute)
     setInterval(recomputeRelayStates, 30_000);
   }
-  return state!;
+  return G.state!;
 }
 
 export function getLogsSnapshot(): ActivityLog[] {
-  return [...logs].reverse(); // newest first
+  return [...G.logs].reverse(); // newest first
 }
 
 export function appendLogExternal(type: LogType, message: string, channelId: number | null = null) {
@@ -362,8 +380,8 @@ export function appendLogExternal(type: LogType, message: string, channelId: num
 
 // ---------- Auth ----------
 export function verifyCredentials(username: string, password: string): boolean {
-  if (!state) return false;
-  return state.username === username && state.passwordHash === password;
+  if (!G.state) return false;
+  return G.state.username === username && G.state.passwordHash === password;
 }
 
 export function getJwtSecret(): string {
@@ -371,27 +389,27 @@ export function getJwtSecret(): string {
 }
 
 export function changePassword(current: string, next: string): boolean {
-  if (!state) return false;
-  if (state.passwordHash !== current) return false;
-  state.passwordHash = next;
+  if (!G.state) return false;
+  if (G.state.passwordHash !== current) return false;
+  G.state.passwordHash = next;
   schedulePersist();
-  appendLog('config_change', `Password changed for user ${state.username}`, null);
+  appendLog('config_change', `Password changed for user ${G.state.username}`, null);
   return true;
 }
 
 // ---------- Mutations ----------
 export function setRelayState(channelId: number, action: 'toggle' | 'on' | 'off' | 'set_mode', opts?: { mode?: 'auto' | 'manual'; manualState?: boolean }): boolean {
-  if (!state) return false;
-  const idx = state.channels.findIndex((c) => c.id === channelId);
+  if (!G.state) return false;
+  const idx = G.state.channels.findIndex((c) => c.id === channelId);
   if (idx < 0) return false;
-  const ch = state.channels[idx];
+  const ch = G.state.channels[idx];
   if (action === 'set_mode') {
     if (opts?.mode === 'auto') {
-      state.channels[idx] = { ...ch, modeAuto: true };
+      G.state.channels[idx] = { ...ch, modeAuto: true };
       appendLog('config_change', `${ch.name} set to AUTO mode`, channelId);
     } else if (opts?.mode === 'manual') {
-      state.channels[idx] = { ...ch, modeAuto: false, manualState: opts.manualState ?? false };
-      appendLog('config_change', `${ch.name} set to MANUAL mode (state=${opts.manualState ?? false})`, channelId);
+      G.state.channels[idx] = { ...ch, modeAuto: false, manualState: opts.manualState ?? false };
+      appendLog('config_change', `${ch.name} set to MANUAL mode (G.state=${opts.manualState ?? false})`, channelId);
     }
   } else {
     // Force manual mode for direct toggle
@@ -399,7 +417,7 @@ export function setRelayState(channelId: number, action: 'toggle' | 'on' | 'off'
     if (action === 'toggle') newManual = !ch.manualState;
     else if (action === 'on') newManual = true;
     else newManual = false;
-    state.channels[idx] = { ...ch, modeAuto: false, manualState: newManual };
+    G.state.channels[idx] = { ...ch, modeAuto: false, manualState: newManual };
     appendLog('config_change', `${ch.name} manually ${newManual ? 'ON' : 'OFF'}`, channelId);
   }
   recomputeRelayStates();
@@ -408,17 +426,17 @@ export function setRelayState(channelId: number, action: 'toggle' | 'on' | 'off'
 }
 
 export function upsertSchedule(s: Schedule): boolean {
-  if (!state) return false;
-  const chSchedules = state.schedules.filter((x) => x.channelId === s.channelId);
+  if (!G.state) return false;
+  const chSchedules = G.state.schedules.filter((x) => x.channelId === s.channelId);
   if (s.id) {
-    const idx = state.schedules.findIndex((x) => x.id === s.id);
+    const idx = G.state.schedules.findIndex((x) => x.id === s.id);
     if (idx >= 0) {
-      state.schedules[idx] = s;
+      G.state.schedules[idx] = s;
       appendLog('config_change', `Schedule updated for CH${s.channelId}`, s.channelId);
     } else return false;
   } else {
     if (chSchedules.length >= 4) return false;
-    state.schedules.push({ ...s, id: nextScheduleId++ });
+    G.state.schedules.push({ ...s, id: G.nextScheduleId++ });
     appendLog('config_change', `Schedule added for CH${s.channelId} (${s.onTime}-${s.offTime})`, s.channelId);
   }
   recomputeRelayStates();
@@ -427,34 +445,48 @@ export function upsertSchedule(s: Schedule): boolean {
 }
 
 export function deleteSchedule(id: number): boolean {
-  if (!state) return false;
-  const idx = state.schedules.findIndex((x) => x.id === id);
+  if (!G.state) return false;
+  const idx = G.state.schedules.findIndex((x) => x.id === id);
   if (idx < 0) return false;
-  const s = state.schedules[idx];
-  state.schedules.splice(idx, 1);
+  const s = G.state.schedules[idx];
+  G.state.schedules.splice(idx, 1);
   appendLog('config_change', `Schedule deleted for CH${s.channelId}`, s.channelId);
   recomputeRelayStates();
   schedulePersist();
   return true;
 }
 
-export function updatePIRConfig(id: number, opts: { enabled?: boolean; holdTime?: number }): boolean {
-  if (!state) return false;
-  const idx = state.pirs.findIndex((p) => p.id === id);
+export function renameChannel(channelId: number, newName: string): boolean {
+  if (!G.state) return false;
+  const idx = G.state.channels.findIndex((c) => c.id === channelId);
   if (idx < 0) return false;
-  const p = state.pirs[idx];
-  state.pirs[idx] = {
+  const trimmed = newName.trim();
+  if (trimmed.length < 1 || trimmed.length > 32) return false;
+  const oldName = G.state.channels[idx].name;
+  if (oldName === trimmed) return true;
+  G.state.channels[idx] = { ...G.state.channels[idx], name: trimmed };
+  appendLog('config_change', `CH${channelId} renamed: "${oldName}" → "${trimmed}"`, channelId);
+  schedulePersist();
+  return true;
+}
+
+export function updatePIRConfig(id: number, opts: { enabled?: boolean; holdTime?: number }): boolean {
+  if (!G.state) return false;
+  const idx = G.state.pirs.findIndex((p) => p.id === id);
+  if (idx < 0) return false;
+  const p = G.state.pirs[idx];
+  G.state.pirs[idx] = {
     ...p,
     enabled: opts.enabled ?? p.enabled,
     holdTime: opts.holdTime ?? p.holdTime,
   };
   // Sync to channel
-  const chIdx = state.channels.findIndex((c) => c.id === p.channelId);
+  const chIdx = G.state.channels.findIndex((c) => c.id === p.channelId);
   if (chIdx >= 0) {
-    state.channels[chIdx] = {
-      ...state.channels[chIdx],
-      pirEnabled: state.pirs[idx].enabled,
-      pirHoldTime: state.pirs[idx].holdTime,
+    G.state.channels[chIdx] = {
+      ...G.state.channels[chIdx],
+      pirEnabled: G.state.pirs[idx].enabled,
+      pirHoldTime: G.state.pirs[idx].holdTime,
     };
   }
   appendLog('config_change', `PIR ${id} config updated (enabled=${opts.enabled ?? p.enabled}, hold=${opts.holdTime ?? p.holdTime}s)`, p.channelId);
@@ -463,12 +495,12 @@ export function updatePIRConfig(id: number, opts: { enabled?: boolean; holdTime?
 }
 
 export function testPIRTrigger(id: number): boolean {
-  if (!state) return false;
-  const idx = state.pirs.findIndex((p) => p.id === id);
+  if (!G.state) return false;
+  const idx = G.state.pirs.findIndex((p) => p.id === id);
   if (idx < 0) return false;
-  const p = state.pirs[idx];
+  const p = G.state.pirs[idx];
   if (Date.now() < p.warmupUntil) return false;
-  state.pirs[idx] = {
+  G.state.pirs[idx] = {
     ...p,
     motionNow: true,
     lastMotionAt: Date.now(),
@@ -477,8 +509,8 @@ export function testPIRTrigger(id: number): boolean {
   appendLog('pir_trigger', `PIR ${id} manual test trigger`, p.channelId);
   recomputeRelayStates();
   setTimeout(() => {
-    if (state && state.pirs[idx]) {
-      state.pirs[idx] = { ...state.pirs[idx], motionNow: false };
+    if (G.state && G.state.pirs[idx]) {
+      G.state.pirs[idx] = { ...G.state.pirs[idx], motionNow: false };
       recomputeRelayStates();
     }
   }, p.holdTime * 1000);
@@ -492,32 +524,32 @@ export function setRtcTime(isoDatetime: string): boolean {
 }
 
 export function updateDeviceConfig(opts: { deviceName?: string; timezone?: string }): boolean {
-  if (!state) return false;
-  if (opts.deviceName !== undefined) state.deviceName = opts.deviceName;
-  if (opts.timezone !== undefined) state.timezone = opts.timezone;
+  if (!G.state) return false;
+  if (opts.deviceName !== undefined) G.state.deviceName = opts.deviceName;
+  if (opts.timezone !== undefined) G.state.timezone = opts.timezone;
   appendLog('config_change', `Device config updated`, null);
   schedulePersist();
   return true;
 }
 
 export function exportConfig(): SystemConfig {
-  if (!state) throw new Error('Store not initialized');
+  if (!G.state) throw new Error('Store not initialized');
   return {
-    deviceName: state.deviceName,
-    timezone: state.timezone,
-    channels: state.channels,
-    schedules: state.schedules,
-    pirs: state.pirs,
+    deviceName: G.state.deviceName,
+    timezone: G.state.timezone,
+    channels: G.state.channels,
+    schedules: G.state.schedules,
+    pirs: G.state.pirs,
   };
 }
 
 export function importConfig(cfg: Partial<SystemConfig>): boolean {
-  if (!state) return false;
-  if (cfg.deviceName) state.deviceName = cfg.deviceName;
-  if (cfg.timezone) state.timezone = cfg.timezone;
-  if (cfg.channels && Array.isArray(cfg.channels)) state.channels = cfg.channels;
-  if (cfg.schedules && Array.isArray(cfg.schedules)) state.schedules = cfg.schedules;
-  if (cfg.pirs && Array.isArray(cfg.pirs)) state.pirs = cfg.pirs;
+  if (!G.state) return false;
+  if (cfg.deviceName) G.state.deviceName = cfg.deviceName;
+  if (cfg.timezone) G.state.timezone = cfg.timezone;
+  if (cfg.channels && Array.isArray(cfg.channels)) G.state.channels = cfg.channels;
+  if (cfg.schedules && Array.isArray(cfg.schedules)) G.state.schedules = cfg.schedules;
+  if (cfg.pirs && Array.isArray(cfg.pirs)) G.state.pirs = cfg.pirs;
   appendLog('config_change', 'Configuration imported', null);
   recomputeRelayStates();
   schedulePersist();
@@ -525,11 +557,11 @@ export function importConfig(cfg: Partial<SystemConfig>): boolean {
 }
 
 export function factoryReset(): boolean {
-  if (!state) return false;
+  if (!G.state) return false;
   const fresh = defaultState();
-  state = fresh;
-  logs = [];
-  nextLogId = 1;
+  G.state = fresh;
+  G.logs = [];
+  G.nextLogId = 1;
   appendLog('factory_reset', 'Factory reset performed. System rebooting.', null);
   persist();
   return true;
@@ -542,34 +574,34 @@ export function reboot(): boolean {
 
 // ---------- OTA simulation ----------
 export function getFirmwareInfo(): FirmwareInfo {
-  if (!state) throw new Error('Store not initialized');
+  if (!G.state) throw new Error('Store not initialized');
   return {
-    currentVersion: state.firmwareVersion,
-    buildDate: state.buildDate,
-    latestAvailable: state.latestAvailable,
-    updateAvailable: state.firmwareVersion !== state.latestAvailable,
+    currentVersion: G.state.firmwareVersion,
+    buildDate: G.state.buildDate,
+    latestAvailable: G.state.latestAvailable,
+    updateAvailable: G.state.firmwareVersion !== G.state.latestAvailable,
     signatureVerified: true,
-    otaStatus: state.otaStatus,
-    lastUpdateAt: state.lastUpdateAt,
-    lastUpdateStatus: state.lastUpdateStatus,
+    otaStatus: G.state.otaStatus,
+    lastUpdateAt: G.state.lastUpdateAt,
+    lastUpdateStatus: G.state.lastUpdateStatus,
   };
 }
 
 export function getOtaHistory(): OtaHistoryEntry[] {
-  if (!state) return [];
-  return state.otaHistory;
+  if (!G.state) return [];
+  return G.state.otaHistory;
 }
 
 export async function simulateOtaUpdate(toVersion: string): Promise<boolean> {
-  if (!state) return false;
-  const fromVersion = state.firmwareVersion;
+  if (!G.state) return false;
+  const fromVersion = G.state.firmwareVersion;
   const startTime = Date.now();
 
-  state.otaStatus = 'uploading';
+  G.state.otaStatus = 'uploading';
   await new Promise((r) => setTimeout(r, 1500));
-  state.otaStatus = 'verifying';
+  G.state.otaStatus = 'verifying';
   await new Promise((r) => setTimeout(r, 1200));
-  state.otaStatus = 'installing';
+  G.state.otaStatus = 'installing';
   await new Promise((r) => setTimeout(r, 2000));
 
   // 90% success rate
@@ -577,12 +609,12 @@ export async function simulateOtaUpdate(toVersion: string): Promise<boolean> {
   const duration = Math.round((Date.now() - startTime) / 1000);
 
   if (success) {
-    state.firmwareVersion = toVersion;
-    state.otaStatus = 'up-to-date';
-    state.lastUpdateAt = Date.now();
-    state.lastUpdateStatus = 'success';
-    state.otaHistory.push({
-      id: state.otaHistory.length + 1,
+    G.state.firmwareVersion = toVersion;
+    G.state.otaStatus = 'up-to-date';
+    G.state.lastUpdateAt = Date.now();
+    G.state.lastUpdateStatus = 'success';
+    G.state.otaHistory.push({
+      id: G.state.otaHistory.length + 1,
       timestamp: Date.now(),
       fromVersion,
       toVersion,
@@ -591,10 +623,10 @@ export async function simulateOtaUpdate(toVersion: string): Promise<boolean> {
     });
     appendLog('ota', `OTA update ${fromVersion} → ${toVersion} succeeded (${duration}s)`, null);
   } else {
-    state.otaStatus = 'rollback';
-    state.lastUpdateStatus = 'rollback';
-    state.otaHistory.push({
-      id: state.otaHistory.length + 1,
+    G.state.otaStatus = 'rollback';
+    G.state.lastUpdateStatus = 'rollback';
+    G.state.otaHistory.push({
+      id: G.state.otaHistory.length + 1,
       timestamp: Date.now(),
       fromVersion,
       toVersion,
@@ -609,13 +641,13 @@ export async function simulateOtaUpdate(toVersion: string): Promise<boolean> {
 
 // ---------- Status ----------
 export function getSystemStatus(): SystemStatus {
-  if (!state) throw new Error('Store not initialized');
+  if (!G.state) throw new Error('Store not initialized');
   const now = Date.now();
-  const uptimeSeconds = Math.floor((now - state.bootTime) / 1000);
-  const relaysOn = state.channels.filter((c) => c.state).length;
-  const schedulesActive = state.schedules.filter((s) => s.enabled && isScheduleActive(s, new Date())).length;
-  const pirTriggersToday = state.pirs.reduce((sum, p) => sum + p.triggerCountToday, 0);
-  const errorsToday = logs.filter(
+  const uptimeSeconds = Math.floor((now - G.state.bootTime) / 1000);
+  const relaysOn = G.state.channels.filter((c) => c.state).length;
+  const schedulesActive = G.state.schedules.filter((s) => s.enabled && isScheduleActive(s, new Date())).length;
+  const pirTriggersToday = G.state.pirs.reduce((sum, p) => sum + p.triggerCountToday, 0);
+  const errorsToday = G.logs.filter(
     (l) => l.type === 'error' && now - l.timestamp < DAY_MS
   ).length;
 
@@ -626,18 +658,18 @@ export function getSystemStatus(): SystemStatus {
   const wifiRssi = -55 - Math.floor(Math.random() * 15);
 
   return {
-    firmwareVersion: state.firmwareVersion,
-    buildDate: state.buildDate,
-    deviceName: state.deviceName,
+    firmwareVersion: G.state.firmwareVersion,
+    buildDate: G.state.buildDate,
+    deviceName: G.state.deviceName,
     uptimeSeconds,
     currentTime: now,
-    timezone: state.timezone,
+    timezone: G.state.timezone,
     wifiRssi,
     freeHeap,
     cpuLoad,
     flashFree,
-    channels: state.channels,
-    pirs: state.pirs,
+    channels: G.state.channels,
+    pirs: G.state.pirs,
     stats: {
       relaysOn,
       schedulesActive,
