@@ -113,6 +113,7 @@ export type SystemStatus = {
   flashFreePercent: number;
   channels: Channel[];
   pirs: PIRState[];
+  schedules: Schedule[];        // included in MQTT status (for remote Scheduler view)
   stats: {
     relaysOn: number;
     schedulesActive: number;

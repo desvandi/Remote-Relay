@@ -58,7 +58,7 @@ export function useConfig() {
       deviceName: mqttStatus.deviceName,
       timezone: mqttStatus.timezone,
       channels: mqttStatus.channels,
-      schedules: [],
+      schedules: mqttStatus.schedules ?? [],
       pirs: mqttStatus.pirs,
     };
     return { data: config, isLoading: false };

@@ -76,9 +76,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   const rssiInfo = status ? formatRssi(status.wifiRssi) : null;
-  const isMock = !process.env.NEXT_PUBLIC_API_BASE_URL;
+  const hasRestApi = !!process.env.NEXT_PUBLIC_API_BASE_URL;
   const { connected: mqttConnected, deviceId } = useMqtt();
   const { isMqttMode } = useAuth();
+  // Show "mock" only if no REST API AND no MQTT connection
+  const isMock = !hasRestApi && !isMqttMode;
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -145,6 +147,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="text-sm font-semibold">{status?.deviceName ?? t('app.name')}</span>
               <span className="text-[10px] text-muted-foreground">
                 {version ? `v${version.currentVersion}` : 'v4.0'}
+                {isMqttMode && <span className="ml-1 text-status-on">· mqtt</span>}
+                {!isMqttMode && hasRestApi && <span className="ml-1 text-status-info">· live</span>}
                 {isMock && <span className="ml-1 text-amber-500">· mock</span>}
               </span>
             </div>
