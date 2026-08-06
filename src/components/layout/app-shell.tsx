@@ -4,6 +4,7 @@ import { ReactNode } from 'react';
 import { useUiStore, type ViewKey } from '@/lib/store';
 import { useLanguage } from '@/components/providers/language-provider';
 import { useAuth } from '@/components/providers/auth-provider';
+import { useMqtt } from '@/components/providers/mqtt-provider';
 import { useVersion } from '@/hooks/useApi';
 import { cn } from '@/lib/utils';
 import {
@@ -20,6 +21,7 @@ import {
   X,
   Wifi,
   WifiOff,
+  Radio,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -75,6 +77,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const rssiInfo = status ? formatRssi(status.wifiRssi) : null;
   const isMock = !process.env.NEXT_PUBLIC_API_BASE_URL;
+  const { connected: mqttConnected, deviceId } = useMqtt();
+  const { isMqttMode } = useAuth();
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -172,9 +176,16 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           {/* Right side controls */}
           <div className="flex items-center gap-1">
-            <Badge variant="outline" className="hidden sm:inline-flex text-xs font-normal">
-              {isMock ? t('common.mock_mode') : t('common.live_mode')}
-            </Badge>
+            {isMqttMode ? (
+              <Badge variant="outline" className="hidden sm:inline-flex text-xs font-normal text-status-on border-status-on/30">
+                <Radio className="w-3 h-3 mr-1" />
+                MQTT {mqttConnected ? 'Connected' : 'Disconnected'}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="hidden sm:inline-flex text-xs font-normal">
+                {isMock ? t('common.mock_mode') : t('common.live_mode')}
+              </Badge>
+            )}
             <LanguageSwitcher />
             <ThemeToggle />
             <Button variant="ghost" size="icon" onClick={logout} aria-label="Logout" title="Logout">
