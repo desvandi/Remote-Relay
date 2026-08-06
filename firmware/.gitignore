@@ -1,0 +1,17 @@
+# Build artifacts
+.pio/
+.pioenvs/
+.piolibdeps/
+.vscode/
+.cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+*.code-workspace
+.idea/
+
+# Logs
+*.log

@@ -1,0 +1,49 @@
+# Monorepo root
+
+# Build artifacts
+**/node_modules/
+**/.next/
+**/out/
+**/build/
+**/.pio/
+**/.pioenvs/
+**/.piolibdeps/
+
+# Environment
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Logs
+*.log
+dev.log
+server.log
+
+# Cache & temp
+**/.cache/
+**/.data/
+**/.turbo/
+**/.vercel/
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# TypeScript build info
+*.tsbuildinfo
+**/next-env.d.ts
+
+# Prisma generated client
+**/node_modules/.prisma/
+
+# Lock files — keep for reproducibility
+# bun.lock  <-- keep
+# package-lock.json  <-- keep

@@ -1,0 +1,53 @@
+{
+  "name": "Timer Digital Relay v4.0",
+  "short_name": "Timer12",
+  "description": "PWA Dashboard for ESP32 Timer Digital 12 Relay + PIR system. Cloud-ready, locally autonomous.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0A0F1A",
+  "theme_color": "#0A0F1A",
+  "categories": ["productivity", "utilities", "iot"],
+  "lang": "id",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Relays",
+      "url": "/?view=dashboard",
+      "description": "View 12 relay status"
+    },
+    {
+      "name": "Scheduler",
+      "short_name": "Schedule",
+      "url": "/?view=scheduler",
+      "description": "Edit weekly schedules"
+    },
+    {
+      "name": "Activity Log",
+      "short_name": "Logs",
+      "url": "/?view=logs",
+      "description": "View activity history"
+    }
+  ]
+}
