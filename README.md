@@ -1,149 +1,203 @@
 # Timer Digital Relay v4.0 — Remote Relay Dashboard
 
-Progressive Web App (PWA) dashboard for controlling an ESP32-based 12-channel relay + 4 PIR timer system from anywhere in the world. **Works behind CGNAT/MiFi** — no port forwarding, no public IP, no always-on host required.
+Progressive Web App (PWA) for controlling an ESP32-based 12-channel relay + 4 PIR timer system from anywhere. **Works behind CGNAT/MiFi** — no port forwarding, no public IP, no always-on host required.
 
-## How It Works
+---
+
+## System Architecture
 
 ```
-Handphone (PWA on Vercel)           ESP32 (joins your WiFi/MiFi)
-       │                                    │
-       │ WSS (outbound)                     │ MQTT (outbound, port 1883)
-       ▼                                    ▼
-       └──────────► HiveMQ Broker ◄─────────┘
-                    (broker.hivemq.com:8884)
-                    FREE · No signup · No auth
+                    ┌──────────────────────────────────────────┐
+                    │           GitHub (source code)            │
+                    │  • Remote-Relay/      (this PWA)          │
+                    │  • firmware_v4/       (ESP32 code)        │
+                    │  • Code.gs            (AI Insights)       │
+                    └──────────┬───────────────────────────────┘
+                               │ git push triggers auto-deploy
+                               ▼
+                    ┌─────────────────────┐
+                    │   Vercel (PWA)      │
+                    │                     │
+                    │  Env vars:          │
+                    │  • NEXT_PUBLIC_     │
+                    │    GAS_INSIGHTS_URL │
+                    │  • NEXT_PUBLIC_     │
+                    │    API_BASE_URL     │ (optional, LAN mode)
+                    └────────┬────────────┘
+                             │
+              ┌──────────────┼──────────────────────────┐
+              │              │                          │
+              │ WSS          │ GET insights             │ HTTP POST logs
+              │ (MQTT)       │ (every 5 min)            │ (every 1 hour)
+              ▼              ▼                          ▼
+        ┌──────────┐  ┌─────────────────┐    ┌──────────────────┐
+        │ HiveMQ   │  │ Google Apps     │    │   ESP32          │
+        │ Broker   │  │ Script Web App  │    │                  │
+        │ (free)   │  │                 │    │  Config.h:       │
+        │          │  │ → Gemini API    │    │  GAS_INSIGHTS_URL│
+        │          │  │ → cache 1 hour  │    │                  │
+        └────┬─────┘  └────────┬────────┘    └────────┬─────────┘
+             │                 │                      │
+             │ MQTT            │ HTTPS                │ MQTT
+             │ (real-time)     │ (AI analysis)        │ (commands)
+             │                 │                      │
+             ▼                 ▼                      ▼
+        ┌──────────────────────────────────────────────────────┐
+        │              Handphone (PWA browser)                  │
+        │                                                      │
+        │  1. Real-time relay control via MQTT (instant)        │
+        │  2. AI Insights fetched from GAS every 5 min          │
+        │  3. ESP32 posts logs to GAS every 1 hour              │
+        └──────────────────────────────────────────────────────┘
 ```
 
-**ESP32** joins your WiFi network (STA mode), connects outbound to a free public MQTT broker. **PWA** on Vercel connects to the same broker via WebSocket. They communicate in real-time — no port forwarding needed, works behind any NAT/CGNAT (IndiHome, MiFi, First Media, etc.).
+### Data Flow Summary
+
+| Flow | Protocol | Frequency | Purpose |
+|------|----------|-----------|---------|
+| ESP32 → HiveMQ | MQTT (TCP 1883) | Every 5s + on-change | Publish status, logs, online state |
+| PWA → HiveMQ | MQTT (WSS 8884) | Real-time | Subscribe status, publish commands |
+| ESP32 → GAS | HTTPS POST | Every 1 hour | Send logs + status for AI analysis |
+| GAS → Gemini | HTTPS POST | On-demand | Generate insights from logs |
+| PWA → GAS | HTTPS GET | Every 5 min | Fetch cached AI insights |
+| GitHub → Vercel | Git push | On commit | Auto-deploy PWA |
+
+---
+
+## Components Overview
+
+### 1. ESP32 Firmware (`firmware_v4/`)
+- 12 relay channels + 4 PIR sensors + DS3231 RTC
+- WiFi STA mode (joins your WiFi via Config Portal)
+- MQTT client (publishes status, subscribes commands)
+- REST API server (port 80, for LAN access)
+- Posts logs to GAS hourly for AI analysis
+- Energy monitoring (Wh per relay)
+- OTA firmware update (via MQTT URL download or REST upload)
+
+### 2. PWA Dashboard (`Remote-Relay/` → Vercel)
+- Next.js 16 + React 19 + TypeScript + Tailwind + shadcn/ui
+- Hybrid REST/MQTT: auto-switches based on connection
+- MQTT remote mode: control from anywhere via HiveMQ broker
+- Fetches AI insights from GAS every 5 minutes
+- Installable PWA (Android/iOS), dark mode, ID/EN i18n
+
+### 3. Google Apps Script (`Code.gs`)
+- Deployable as GAS Web App (free, no VPS needed)
+- Receives logs from ESP32 via HTTP POST
+- Calls Gemini API (`gemini-1.5-flash`) with structured prompt
+- Caches insights for 1 hour (reduces API calls)
+- PWA fetches insights via HTTP GET
+
+### 4. HiveMQ Public Broker
+- Free MQTT broker at `broker.hivemq.com`
+- No signup, no auth (security via topic password)
+- ESP32 connects via TCP port 1883
+- PWA connects via WebSocket Secure (WSS) port 8884
+
+---
 
 ## Quick Start
 
-### Option A: Demo Mode (Mock API, no hardware)
-```bash
-bun install && bun run dev
-```
-Open http://localhost:3000, login with `admin` / `admin123`. All 9 features work with simulated data.
+### Phase 1: Flash Firmware to ESP32
 
-### Option B: Production (Real ESP32 via MQTT)
-1. Flash firmware to ESP32 (see [Firmware Setup](#firmware-setup) below)
-2. Deploy this PWA to Vercel (auto-detected as Next.js)
-3. Open PWA → scroll to **"Remote Mode (MQTT)"** → enter ESP32 MAC address
-4. Dashboard loads real-time data from your ESP32, accessible from anywhere
+1. **Download** `firmware_v4_arduino.zip` and extract to `~/Documents/Arduino/firmware_v4/`
+2. **Install libraries** in Arduino IDE (Sketch → Include Library → Manage Libraries):
+   - `RTClib` by Adafruit (v2.1.4+)
+   - `ArduinoJson` by Benoit Blanchon (v7.0.0+)
+   - `PubSubClient` by Nick O'Leary (v2.8+)
+3. **Open** `firmware_v4.ino` in Arduino IDE
+4. **Set board:** ESP32 Dev Module, Partition: Default 4MB with spiffs
+5. **Upload** via USB
+6. **Open Serial Monitor** (115200 baud)
+7. ESP32 starts AP `Timer12-Setup` — connect to it from phone/laptop
+8. Open `http://192.168.4.1` in browser, enter your WiFi SSID + password
+9. ESP32 reboots, joins your WiFi, connects to MQTT broker
+10. **Serial Monitor shows:**
+    ```
+    MAC: A4CF12345678
+    MQTT Password: K7M3P9XQ
+    Device PIN: 123456
+    ```
+    **Save these** — needed for PWA login
 
----
+### Phase 2: Deploy PWA to Vercel
 
-## Features
-
-| Feature | LAN (REST) | Remote (MQTT) |
-|---------|:----------:|:--------------:|
-| 12 Relay Control (toggle, mode switch) | ✅ | ✅ |
-| Channel Rename | ✅ | ✅ |
-| Weekly Scheduler (max 4/channel, day-mask) | ✅ | ✅ |
-| 4 PIR Config (hold time, test trigger) | ✅ | ✅ |
-| Activity Log (real-time + filter + CSV export) | ✅ | ✅ |
-| AI Insights (mock advisory cards) | ✅ | ✅ |
-| OTA Firmware Upload | ✅ | ❌ (use LAN) |
-| Change Password | ✅ | ❌ (use LAN) |
-| Factory Reset | ✅ | ❌ (use LAN) |
-| Config Export/Import | ✅ | ❌ (use LAN) |
-| Device Name / Timezone change | ✅ | ❌ (use LAN) |
-| Dark Mode (light/dark/system) | ✅ | ✅ |
-| Multi-language (ID/EN) | ✅ | ✅ |
-| PWA Install (Android/iOS) | ✅ | ✅ |
-
----
-
-## Firmware Setup
-
-### Hardware Required
-- ESP32-WROOM-32 Dev Module
-- 12-channel relay module (active-LOW, 5V)
-- 4× HC-SR501 PIR sensor
-- DS3231 RTC module (+ CR1220 battery)
-- 5V power supply (≥1A, shared GND with ESP32)
-- Breadboard/jumper wires
-
-### Pin Mapping
-| Component | GPIO | Notes |
-|-----------|------|-------|
-| Relay 1-12 | 13,14,16,17,18,19,21,22,23,25,26,27 | Active-LOW |
-| PIR 1-4 | 34,35,36,39 | Input-only pins |
-| DS3231 SDA | 32 | I2C 400kHz |
-| DS3231 SCL | 33 | I2C 400kHz |
-
-### Install Libraries (Arduino IDE)
-Open **Sketch → Include Library → Manage Libraries...** and install:
-1. **RTClib** by Adafruit (v2.1.4+)
-2. **ArduinoJson** by Benoit Blanchon (v7.0.0+)
-3. **PubSubClient** by Nick O'Leary (v2.8+)
-
-### Configure WiFi Credentials
-Edit `Config.h` in the firmware folder:
-```cpp
-constexpr const char* STA_SSID = "YOUR_WIFI_SSID";
-constexpr const char* STA_PASSWORD = "YOUR_WIFI_PASSWORD";
-```
-
-### Flash Firmware
-1. Download `firmware_v4_arduino.zip` (contact repo owner)
-2. Extract to `~/Documents/Arduino/firmware_v4/`
-3. Open `firmware_v4.ino` in Arduino IDE 2.x
-4. Set board: **ESP32 Dev Module**, partition: **Default 4MB with spiffs**
-5. Upload via USB
-6. Open Serial Monitor (115200 baud) — note the **MAC address** (e.g., `A4CF12345678`)
-
-ESP32 will:
-- Try to join your WiFi (STA mode, 15s timeout)
-- Fall back to AP mode (`Timer12CH`) if WiFi fails
-- Connect to HiveMQ MQTT broker automatically
-- Start REST API server on port 80 (for LAN access)
-
----
-
-## Deploy PWA to Vercel
-
-### Via Vercel Dashboard
 1. Go to https://vercel.com/new
-2. Import this GitHub repo
-3. Vercel auto-detects Next.js 16 — accept defaults
-4. **No environment variables needed for MQTT mode** (PWA connects to broker directly)
-5. Deploy
+2. Import `desvandi/Remote-Relay` from GitHub
+3. Vercel auto-detects Next.js — accept defaults
+4. **No env vars needed for basic MQTT mode** — deploy as-is
+5. After deploy, open your Vercel URL
 
-### Optional: LAN Mode env var
-If you want to use REST API (LAN only, faster than MQTT):
-- Settings → Environment Variables → add:
-  - `NEXT_PUBLIC_API_BASE_URL` = `http://192.168.1.50` (your ESP32 local IP)
-- Redeploy
+### Phase 3: Connect PWA to ESP32
 
-> **Note:** REST mode only works when your phone is on the same WiFi as the ESP32. For remote access, use MQTT mode (no env var needed).
+1. Open your PWA URL in browser
+2. Scroll to **"Remote Mode (MQTT)"** card
+3. Enter:
+   - **Device ID (MAC):** `A4CF12345678` (from Serial Monitor)
+   - **MQTT Password:** `K7M3P9XQ` (from Serial Monitor)
+4. Click **Connect via MQTT**
+5. Dashboard loads — control relays from anywhere!
 
-### Mode Indicators in Dashboard
-The header shows the active mode:
-- `· mqtt` (green) — MQTT remote mode, connected to ESP32 via broker
-- `· live` (blue) — REST LAN mode, connected to ESP32 directly
-- `· mock` (amber) — Demo mode, using simulated data (no real hardware)
+### Phase 4 (Optional): Enable AI Insights via GAS
+
+1. Open https://script.google.com → **New Project**
+2. Delete default code, paste contents of `Code.gs` (from `download/` folder)
+3. **Set Gemini API key:**
+   - Project Settings → Script Properties
+   - Add property: `GEMINI_API_KEY` = your key from https://aistudio.google.com/apikey
+4. **Deploy as Web App:**
+   - Deploy → New Deployment → Type: Web App
+   - Execute as: **Me**
+   - Who has access: **Anyone** (anonymous)
+   - Click **Deploy**, authorize permissions
+5. **Copy deployment URL** (e.g., `https://script.google.com/macros/s/AKfyc.../exec`)
+6. **Set in two places:**
+
+   **PWA (Vercel):**
+   - Vercel Dashboard → Settings → Environment Variables
+   - Key: `NEXT_PUBLIC_GAS_INSIGHTS_URL`
+   - Value: `https://script.google.com/macros/s/AKfyc.../exec`
+   - Redeploy
+
+   **ESP32 Firmware:**
+   - Edit `Config.h` line 84:
+     ```cpp
+     constexpr const char* GAS_INSIGHTS_URL = "https://script.google.com/macros/s/AKfyc.../exec";
+     ```
+   - Re-flash firmware to ESP32
+   - ESP32 will now POST logs to GAS every hour
+
+7. Open PWA → AI Insights tab → real Gemini recommendations appear!
 
 ---
 
-## Connect PWA to ESP32
+## Where to Input Config URLs
 
-### Remote Mode (MQTT) — Works from anywhere
-1. Open your Vercel PWA URL
-2. On login page, scroll to **"Remote Mode (MQTT)"** card
-3. Enter ESP32 MAC address (12 hex chars, e.g., `A4CF12345678`)
-   - Found in Serial Monitor: `MAC: A4CF12345678`
-4. Click **Connect via MQTT**
-5. Dashboard loads — you can now control relays from anywhere
+### GAS Script URL — 2 places
 
-### Local Mode (REST) — Faster, same WiFi only
-1. Set `NEXT_PUBLIC_API_BASE_URL` env var in Vercel (ESP32 local IP)
-2. Login with `admin` + WiFi AP password (from Serial Monitor)
-3. Dashboard connects directly to ESP32 REST API
+| Where | Variable | How |
+|-------|----------|-----|
+| **PWA (Vercel)** | `NEXT_PUBLIC_GAS_INSIGHTS_URL` | Vercel Dashboard → Settings → Environment Variables → Add |
+| **ESP32 (Firmware)** | `GAS_INSIGHTS_URL` in `Config.h` | Edit file before flashing, re-upload |
 
-### Hybrid (Both modes)
-- If MQTT is connected → uses MQTT (remote)
-- If `NEXT_PUBLIC_API_BASE_URL` is set and MQTT is off → uses REST (LAN)
-- If neither → uses Mock API (demo)
+> **When:** After deploying Code.gs as a GAS Web App (Phase 4, step 5 above).
+
+### ESP32 MAC Address + MQTT Password — 1 place
+
+| Where | Variable | How |
+|-------|----------|-----|
+| **PWA (login page)** | Input fields in "Remote Mode (MQTT)" card | Type manually from Serial Monitor output |
+
+> **When:** Every time you connect to a different ESP32 device.
+
+### WiFi Credentials — 1 place
+
+| Where | Variable | How |
+|-------|----------|-----|
+| **ESP32 (Config Portal)** | Web form at `http://192.168.4.1` | Connect to `Timer12-Setup` AP, enter in browser |
+
+> **When:** First boot, or when WiFi credentials change (auto-reopens on 3 failed retries).
 
 ---
 
@@ -151,17 +205,21 @@ The header shows the active mode:
 
 ### Broker
 - **Host:** `broker.hivemq.com`
-- **Port:** 1883 (ESP32, plain TCP) / 8884 (PWA, WSS)
+- **ESP32 port:** 1883 (TCP)
+- **PWA port:** 8884 (WebSocket Secure)
 - **Auth:** None (public broker)
-- **Free, no signup, no rate limit**
+- **Security:** Topic includes random 8-char password per device
 
-### Topics (per device, based on MAC)
+### Topic Structure
 ```
-timer12/<MAC>/status    ← ESP32 publishes SystemStatus JSON (every 5s + on-change)
-timer12/<MAC>/command   ← PWA publishes command JSON, ESP32 executes
-timer12/<MAC>/log       ← ESP32 publishes activity log entries (real-time push)
-timer12/<MAC>/online    ← LWT: "1" on connect, "0" on disconnect
+timer12/<MAC>/<PASSWORD>/status    ← ESP32 publishes SystemStatus JSON
+timer12/<MAC>/<PASSWORD>/command   ← PWA publishes commands
+timer12/<MAC>/<PASSWORD>/log       ← ESP32 publishes activity log
+timer12/<MAC>/<PASSWORD>/online    ← LWT: "1" on connect, "0" on disconnect
+timer12/<MAC>/<PASSWORD>/ota       ← PWA publishes OTA update commands
 ```
+
+**Example:** `timer12/A4CF12345678/K7M3P9XQ/status`
 
 ### Command Format (PWA → ESP32)
 ```json
@@ -175,92 +233,137 @@ timer12/<MAC>/online    ← LWT: "1" on connect, "0" on disconnect
 {"type":"time","action":"set","datetime":"2026-08-06T15:30:00"}
 {"type":"system","action":"reboot"}
 {"type":"system","action":"getStatus"}
+{"type":"system","action":"resetEnergyStats"}
 ```
 
-### Security Note
-The public broker means anyone who knows your MAC address can subscribe to your topics. For personal use this is acceptable (MAC is hard to guess). For production, consider:
-- Self-hosted broker with auth (Mosquitto on VPS)
-- AES encryption on payloads
-- Private broker (EMQX Cloud free tier)
+### OTA via MQTT
+PWA publishes to `ota` topic:
+```json
+{"action":"update","url":"https://github.com/.../firmware.bin","version":"4.1.0"}
+```
+ESP32 HTTP downloads binary, streams to flash, publishes progress, reboots on success.
 
 ---
 
-## REST API Contract (LAN Mode)
+## REST API (LAN Mode, Optional)
+
+For LAN-only access (faster than MQTT, same WiFi required):
+
+Set `NEXT_PUBLIC_API_BASE_URL=http://192.168.1.50` in Vercel env vars.
 
 All responses: `{ "success": bool, "message": string, "data": T }`
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | POST | `/api/login` | JWT + CSRF cookies |
-| POST | `/api/logout` | Clear session |
-| GET | `/api/session` | Check auth |
 | GET | `/api/status` | Full SystemStatus |
-| GET | `/api/version` | Firmware info |
 | POST | `/api/relay` | Toggle/on/off/set_mode |
 | POST | `/api/schedule` | Upsert schedule |
-| DELETE | `/api/schedule?id=N` | Delete schedule |
 | POST | `/api/pir` | PIR config |
-| POST | `/api/pir/test` | Test trigger |
 | POST | `/api/time` | Set RTC |
-| GET | `/api/log` | Activity log (filterable) |
+| GET | `/api/log` | Activity log |
 | POST | `/api/channel` | Rename channel |
-| GET | `/api/config` | User + device info |
-| POST | `/api/config/device` | Device name/timezone |
-| POST | `/api/config/password` | Change password |
-| GET | `/api/config/export` | Backup JSON |
-| POST | `/api/config/import` | Restore backup |
 | POST | `/api/reboot` | Reboot ESP32 |
-| POST | `/api/ota` | Upload firmware |
-| POST | `/api/ota/check` | Check for update |
+| POST | `/api/ota` | Upload firmware (LAN only) |
 | POST | `/api/factory_reset/prepare` | Generate reset token |
-| POST | `/api/factory_reset/confirm` | Execute reset |
+| POST | `/api/factory_reset/confirm` | Execute factory reset |
 
 ---
 
-## PWA Installation
+## Features
 
-### Android (Chrome/Edge)
-1. Open PWA URL → menu (⋮) → **Install app**
-2. App appears in launcher with Timer12 icon
+| Feature | LAN (REST) | Remote (MQTT) |
+|---------|:----------:|:--------------:|
+| 12 Relay Control | ✅ | ✅ |
+| Channel Rename | ✅ | ✅ |
+| Weekly Scheduler (max 4/channel) | ✅ | ✅ |
+| Schedule Conflict Validation | ✅ | ✅ |
+| 4 PIR Config | ✅ | ✅ |
+| Activity Log (real-time + CSV) | ✅ | ✅ |
+| AI Insights (Gemini via GAS) | ✅ | ✅ |
+| Energy Monitoring (Wh per relay) | ✅ | ✅ |
+| Geofencing (enter/leave actions) | ✅ | ✅ |
+| OTA Firmware Update | ✅ (upload) | ✅ (URL download) |
+| WiFi Config Portal | ✅ | ✅ |
+| MQTT Security (topic password) | — | ✅ |
+| Change Password | ✅ | ❌ (use LAN) |
+| Factory Reset | ✅ | ❌ (use LAN) |
+| Config Export/Import | ✅ | ❌ (use LAN) |
+| Dark Mode (light/dark/system) | ✅ | ✅ |
+| Multi-language (ID/EN) | ✅ | ✅ |
+| PWA Install (Android/iOS) | ✅ | ✅ |
 
-### iOS (Safari)
-1. Open PWA URL → **Share** → **Add to Home Screen**
-2. Launches in standalone mode (no Safari chrome)
+---
+
+## Hardware Setup
+
+### Components
+- ESP32-WROOM-32 Dev Module
+- 12-channel relay module (active-LOW, 5V)
+- 4× HC-SR501 PIR sensor
+- DS3231 RTC module (+ CR1220 battery)
+- 5V power supply (≥1A, shared GND with ESP32)
+
+### Pin Mapping
+| Component | GPIO | Notes |
+|-----------|------|-------|
+| Relay 1-12 | 13,14,16,17,18,19,21,22,23,25,26,27 | Active-LOW |
+| PIR 1-4 | 34,35,36,39 | Input-only pins |
+| DS3231 SDA | 32 | I2C 400kHz |
+| DS3231 SCL | 33 | I2C 400kHz |
 
 ---
 
 ## Project Structure
 
 ```
-Remote-Relay/
-├── package.json                ← Next.js 16 + React 19 + TypeScript 5
+Remote-Relay/                         ← PWA (this repo)
+├── package.json
+├── .env.example                      ← env var template
 ├── src/
 │   ├── app/
-│   │   ├── layout.tsx          ← Root: PWA metadata + 5 providers
-│   │   ├── page.tsx            ← Auth gate (login or dashboard)
-│   │   └── api/                ← Mock REST API (22 route handlers)
+│   │   ├── layout.tsx                ← Root: PWA metadata + 5 providers
+│   │   ├── page.tsx                  ← Auth gate (login or dashboard)
+│   │   └── api/                      ← Mock REST API (LAN mode fallback)
 │   ├── components/
-│   │   ├── providers/          ← Theme, Language, Query, Auth, MQTT
-│   │   ├── layout/             ← AppShell, Sidebar, Header, Mobile nav
-│   │   ├── auth/               ← Login (REST + MQTT dual mode)
-│   │   ├── dashboard/          ← 12 relay grid
-│   │   ├── scheduler/          ← Weekly schedule editor
-│   │   ├── pir/                ← 4 PIR cards
-│   │   ├── logs/               ← Activity log table
-│   │   ├── ai/                 ← Mock Gemini insights
-│   │   ├── ota/                ← Firmware management
-│   │   └── settings/           ← Timezone, password, backup, reset
-│   ├── hooks/useApi.ts         ← Hybrid REST/MQTT React Query hooks
+│   │   ├── providers/                ← Theme, Language, Query, Auth, MQTT
+│   │   ├── layout/                   ← AppShell, Sidebar, Header
+│   │   ├── auth/                     ← Login (REST + MQTT dual mode)
+│   │   ├── dashboard/                ← 12 relay grid
+│   │   ├── scheduler/                ← Weekly schedule editor
+│   │   ├── pir/                      ← 4 PIR cards
+│   │   ├── logs/                     ← Activity log table
+│   │   ├── ai/                       ← AI Insights (GAS-powered)
+│   │   ├── ota/                      ← Firmware management
+│   │   └── settings/                 ← Timezone, password, backup, reset
+│   ├── hooks/useApi.ts              ← Hybrid REST/MQTT React Query hooks
 │   └── lib/
-│       ├── types.ts            ← v4.0 API contract types
-│       ├── api.ts              ← REST API client
-│       ├── mqtt.ts             ← MQTT client (WSS to HiveMQ)
-│       ├── mockStore.ts        ← In-memory simulator (demo mode)
-│       ├── i18n.ts             ← ID + EN translations
-│       └── format.ts           ← Time/uptime/RSSI formatters
+│       ├── types.ts                  ← API contract types
+│       ├── api.ts                    ← REST API client
+│       ├── mqtt.ts                   ← MQTT client (WSS to HiveMQ)
+│       ├── aiInsights.ts             ← GAS insights fetcher
+│       ├── geofence.ts               ← Geofencing utility
+│       ├── scheduleConflict.ts       ← Schedule overlap validator
+│       ├── mockStore.ts              ← In-memory simulator (demo mode)
+│       ├── i18n.ts                   ← ID + EN translations
+│       └── format.ts                 ← Time/uptime/RSSI formatters
 └── public/
-    ├── manifest.webmanifest    ← PWA manifest
+    ├── manifest.webmanifest
     └── icon-{192,512,512-maskable}.png
+
+firmware_v4/                          ← ESP32 firmware (separate download)
+├── firmware_v4.ino                   ← Main entry
+├── Config.h                          ← ⚠️ Edit GAS_INSIGHTS_URL here
+├── WifiManager.cpp                   ← WiFi Config Portal + STA mode
+├── MqttClient.cpp                    ← MQTT publish/subscribe + OTA
+├── Advisor.cpp                       ← GAS integration (POST logs hourly)
+├── RelayEngine.cpp                   ← Priority: Manual > PIR > Schedule
+├── ... (40+ files total)
+
+download/
+├── Code.gs                           ← Google Apps Script (deploy to GAS)
+├── firmware_v4_arduino.zip           ← Firmware package
+└── firmware-deployment-guide.pdf     ← Detailed setup guide
 ```
 
 ---
@@ -269,44 +372,58 @@ Remote-Relay/
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | Next.js 16 (App Router, Turbopack) |
+| PWA Framework | Next.js 16 (App Router, Turbopack) |
 | Language | TypeScript 5 |
 | UI | Tailwind CSS 4 + shadcn/ui + Lucide |
 | State | TanStack Query (server), Zustand (UI) |
-| Auth | JWT (HS256) + CSRF (REST mode) |
 | MQTT | mqtt.js v5 (PWA) + PubSubClient (ESP32) |
 | Broker | HiveMQ public (broker.hivemq.com) |
+| AI | Google Apps Script → Gemini API (gemini-1.5-flash) |
+| Hosting | Vercel (PWA) + ESP32 (firmware) + GAS (AI) |
+| Auth | JWT (HS256) + CSRF (REST mode) + Topic password (MQTT mode) |
 | Theme | next-themes (dark default) |
 | i18n | Custom context (ID + EN) |
-| Hosting | Vercel (PWA) + ESP32 (firmware) |
 
 ---
 
 ## Troubleshooting
 
 ### PWA shows "MOCK API" badge
-- **Cause:** No MQTT connection AND no `NEXT_PUBLIC_API_BASE_URL` env var
-- **Fix:** Either (a) connect via MQTT in login page, or (b) set `NEXT_PUBLIC_API_BASE_URL` in Vercel
+- **Cause:** No MQTT connection AND no `NEXT_PUBLIC_API_BASE_URL`
+- **Fix:** Connect via MQTT (enter MAC + password in login page)
 
 ### MQTT won't connect
 - Check ESP32 Serial Monitor — must show `MQTT: connected!`
-- Verify MAC address is 12 hex chars (uppercase, no colons)
-- HiveMQ broker is sometimes slow — wait 10s for first connection
-- Check ESP32 is in STA mode (joined WiFi, not AP fallback)
+- Verify MAC (12 hex chars) + MQTT password (8 chars) match Serial output
+- HiveMQ can be slow — wait 10s for first connection
+- Ensure ESP32 is in STA mode (joined WiFi, not Config Portal)
 
-### ESP32 falls back to AP mode
-- WiFi credentials wrong → check `STA_SSID` / `STA_PASSWORD` in `Config.h`
+### ESP32 falls back to Config Portal
+- WiFi credentials wrong → connect to `Timer12-Setup` AP, reconfigure at `http://192.168.4.1`
 - WiFi out of range → move ESP32 closer to router
-- AP mode: SSID `Timer12CH`, password shown in Serial Monitor
+
+### AI Insights show mock cards
+- **Cause:** `NEXT_PUBLIC_GAS_INSIGHTS_URL` not set in Vercel, OR `GAS_INSIGHTS_URL` empty in `Config.h`
+- **Fix:** Deploy Code.gs to GAS, set URL in both Vercel env vars + Config.h, re-flash firmware
 
 ### OTA / Password / Factory Reset don't work
-- These features require LAN (REST) connection — MQTT can't do large binary uploads or NVS writes
+- These require LAN (REST) connection — MQTT can't do NVS writes
 - Connect phone to same WiFi as ESP32, set `NEXT_PUBLIC_API_BASE_URL`, use REST mode
 
 ### Relay doesn't toggle
 - Check wiring: GPIO → relay IN, shared GND, 5V PSU
 - Check Serial Monitor: should show `Relay X ON via manual`
 - Check relay module is active-LOW (most are)
+
+---
+
+## Security Notes
+
+- **MQTT topic password:** 8-char random alphanumeric, generated per device, stored in NVS. Without it, attackers can't subscribe/publish even if they know your MAC.
+- **Public broker:** HiveMQ public broker is unauthenticated. Topic password provides obscurity-level security. For production, consider self-hosted Mosquitto with auth.
+- **GAS Web App:** Deployed as "Anyone (anonymous)" — anyone with the URL can fetch insights. The URL is unguessable (long random string). No sensitive data is exposed (only usage patterns + recommendations).
+- **JWT (REST mode):** HS256 signed with device secret, 1-hour expiry. CSRF token required for all mutations.
+- **No hardcoded WiFi/MQTT passwords:** All credentials generated at first boot, stored in NVS.
 
 ---
 
