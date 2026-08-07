@@ -84,13 +84,21 @@ export function DashboardView() {
         <MiniStat icon={Clock} label={t('dashboard.current_time')} value={formatTime(status.currentTime, status.timezone, lang)} mono />
       </div>
 
-      {/* Power monitoring (ACS712) */}
-      {status.acs712Available && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard icon={Zap} label="Total Current" value={`${(status.totalCurrentA ?? 0).toFixed(2)} A`} accent="info" />
-          <StatCard icon={Zap} label="Total Power" value={`${(status.totalPowerW ?? 0).toFixed(0)} W`} accent="on" />
-          <StatCard icon={Activity} label="Total Energy" value={`${(status.totalEnergyWh ?? 0).toFixed(1)} Wh`} accent="warn" />
-          <StatCard icon={Activity} label="Est. Cost" value={`Rp ${((status.totalEnergyWh ?? 0) / 1000 * 1467).toFixed(0)}`} accent="off" />
+      {/* Power monitoring (PZEM-004T v3.0) */}
+      {status.pzemAvailable && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          <StatCard icon={Zap} label="Voltage" value={`${(status.voltage ?? 0).toFixed(1)} V`} accent="on" />
+          <StatCard icon={Zap} label="Current" value={`${(status.current ?? 0).toFixed(3)} A`} accent="info" />
+          <StatCard icon={Zap} label="Power" value={`${(status.power ?? 0).toFixed(1)} W`} accent="on" />
+          <StatCard icon={Activity} label="Energy" value={`${(status.energy ?? 0).toFixed(3)} kWh`} accent="warn" />
+          <StatCard icon={Activity} label="Frequency" value={`${(status.frequency ?? 50).toFixed(1)} Hz`} accent="info" />
+          <StatCard icon={Activity} label="Power Factor" value={`${(status.powerFactor ?? 0).toFixed(2)}`} accent="on" />
+          <StatCard
+            icon={AlertTriangle}
+            label="Cost (Rp)"
+            value={`Rp ${Math.round((status.energy ?? 0) * 1467).toLocaleString('id-ID')}`}
+            accent={status.powerAlarm ? "error" : "off"}
+          />
         </div>
       )}
 

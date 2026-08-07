@@ -124,12 +124,15 @@ export type SystemStatus = {
     errorsToday: number;
   };
   online: boolean;
-  // ACS712 power monitoring (optional, via ADS1115)
-  acs712Available?: boolean;
-  totalCurrentA?: number;       // total current (Amperes)
-  totalPowerW?: number;         // total power (Watts)
-  totalEnergyWh?: number;       // total accumulated energy (Watt-hours)
-  currents?: number[];          // per-sensor current readings
+  // PZEM-004T v3.0 power monitoring (optional, via UART)
+  pzemAvailable?: boolean;
+  voltage?: number;         // Volts AC
+  current?: number;         // Amperes
+  power?: number;           // Watts (active)
+  energy?: number;          // kWh (accumulated)
+  frequency?: number;       // Hz
+  powerFactor?: number;     // 0.0 - 1.0
+  powerAlarm?: boolean;     // over-current alarm
 };
 
 // ---------- CONFIG ----------

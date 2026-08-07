@@ -678,11 +678,14 @@ export function getSystemStatus(): SystemStatus {
       errorsToday,
     },
     online: true,
-    // ACS712 mock data (simulated for demo mode)
-    acs712Available: true,
-    totalCurrentA: relaysOn * 0.15 + Math.random() * 0.1,
-    totalPowerW: relaysOn * 33 + Math.random() * 10,
-    totalEnergyWh: relaysOn * 5.5 + Math.random() * 2,
-    currents: [0.15, 0.0, 0.0, 0.0],
+    // PZEM-004T v3.0 mock data (simulated for demo mode)
+    pzemAvailable: true,
+    voltage: 220.0 + (Math.random() - 0.5) * 4,         // 218-222V
+    current: relaysOn * 0.15 + Math.random() * 0.05,    // ~0.15A per active relay
+    power: relaysOn * 33 + Math.random() * 10,          // ~33W per active relay
+    energy: relaysOn * 0.0055 + Math.random() * 0.002,  // kWh
+    frequency: 50.0 + (Math.random() - 0.5) * 0.2,      // 49.9-50.1 Hz
+    powerFactor: 0.85 + Math.random() * 0.1,            // 0.85-0.95
+    powerAlarm: false,
   };
 }
