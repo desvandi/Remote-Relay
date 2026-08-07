@@ -9,6 +9,7 @@ import { SchedulerView } from '@/components/scheduler/scheduler-view';
 import { PirView } from '@/components/pir/pir-view';
 import { LogsView } from '@/components/logs/logs-view';
 import { AiView } from '@/components/ai/ai-view';
+import { EnergyAnalyticsView } from '@/components/energy/energy-analytics-view';
 import { OtaView } from '@/components/ota/ota-view';
 import { SettingsView } from '@/components/settings/settings-view';
 import { Loader2 } from 'lucide-react';
@@ -39,6 +40,7 @@ export default function Home() {
       {currentView === 'pir' && <PirView />}
       {currentView === 'logs' && <LogsView />}
       {currentView === 'ai' && <AiView />}
+      {currentView === 'energy' && <EnergyAnalyticsView />}
       {currentView === 'ota' && <OtaView />}
       {currentView === 'settings' && <SettingsView />}
     </AppShell>

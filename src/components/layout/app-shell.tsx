@@ -22,6 +22,7 @@ import {
   Wifi,
   WifiOff,
   Radio,
+  BarChart3,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -49,12 +50,13 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'pir', icon: Radar },
   { key: 'logs', icon: ScrollText },
   { key: 'ai', icon: Sparkles },
+  { key: 'energy', icon: BarChart3 },
   { key: 'ota', icon: Download },
   { key: 'settings', icon: Settings },
 ];
 
 // Mobile bottom-nav subset (top 5 most used)
-const MOBILE_NAV: ViewKey[] = ['dashboard', 'scheduler', 'pir', 'logs', 'settings'];
+const MOBILE_NAV: ViewKey[] = ['dashboard', 'scheduler', 'pir', 'logs', 'energy'];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { currentView, setView, sidebarCollapsed, toggleSidebar } = useUiStore();

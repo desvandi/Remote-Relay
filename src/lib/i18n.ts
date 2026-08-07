@@ -15,6 +15,7 @@ export type TranslationKey =
   | 'nav.pir'
   | 'nav.logs'
   | 'nav.ai'
+  | 'nav.energy'
   | 'nav.ota'
   | 'nav.settings'
   // Common
@@ -187,6 +188,7 @@ const id: Dict = {
   'nav.pir': 'Sensor PIR',
   'nav.logs': 'Log Aktivitas',
   'nav.ai': 'Insight AI',
+  'nav.energy': 'Energi',
   'nav.ota': 'OTA Firmware',
   'nav.settings': 'Pengaturan',
   'common.save': 'Simpan',
@@ -348,6 +350,7 @@ const en: Dict = {
   'nav.pir': 'PIR Sensors',
   'nav.logs': 'Activity Log',
   'nav.ai': 'AI Insights',
+  'nav.energy': 'Energy',
   'nav.ota': 'Firmware OTA',
   'nav.settings': 'Settings',
   'common.save': 'Save',

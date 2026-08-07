@@ -129,10 +129,28 @@ export type SystemStatus = {
   voltage?: number;         // Volts AC
   current?: number;         // Amperes
   power?: number;           // Watts (active)
-  energy?: number;          // kWh (accumulated)
+  energy?: number;          // kWh (accumulated total)
   frequency?: number;       // Hz
   powerFactor?: number;     // 0.0 - 1.0
-  powerAlarm?: boolean;     // over-current alarm
+  powerAlarm?: boolean;     // over-current alarm from PZEM hardware
+  // Derived calculations (computed by ESP32)
+  apparentPower?: number;   // VA = V × A
+  reactivePower?: number;   // VAR = √(VA² - W²)
+  // Daily statistics (reset at midnight by ESP32)
+  energyToday?: number;     // kWh consumed today
+  voltageMin?: number;      // min voltage today
+  voltageMax?: number;      // max voltage today
+  currentMax?: number;      // max current today
+  powerMax?: number;        // max power today
+  powerAvg?: number;        // average power today
+  // Alarm state (checked by ESP32 every read cycle)
+  alarms?: {
+    undervoltage?: boolean;
+    overvoltage?: boolean;
+    overcurrent?: boolean;
+    overpower?: boolean;
+    lowPowerFactor?: boolean;
+  };
 };
 
 // ---------- CONFIG ----------
