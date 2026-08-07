@@ -13,6 +13,7 @@ const MQTT_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
 type MqttState = {
   client: mqtt.MqttClient | null;
   deviceId: string | null;
+  password: string | null;
   connected: boolean;
 };
 
@@ -23,6 +24,7 @@ type OnlineCallback = (online: boolean) => void;
 const state: MqttState = {
   client: null,
   deviceId: null,
+  password: null,
   connected: false,
 };
 
@@ -57,7 +59,7 @@ export function isMqttConnected(): boolean {
   return state.connected;
 }
 
-export function connectMqtt(deviceId: string): Promise<void> {
+export function connectMqtt(deviceId: string, password: string): Promise<void> {
   return new Promise((resolve, reject) => {
     if (state.client) {
       state.client.end(true);
@@ -65,13 +67,19 @@ export function connectMqtt(deviceId: string): Promise<void> {
     }
 
     state.deviceId = deviceId.toUpperCase().replace(/[^A-F0-9]/g, '');
+    state.password = password.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
     if (state.deviceId.length !== 12) {
       reject(new Error('Device ID must be 12 hex chars (e.g., A4CF12345678)'));
       return;
     }
+    if (state.password.length < 4) {
+      reject(new Error('MQTT password must be at least 4 chars'));
+      return;
+    }
 
-    const baseTopic = `timer12/${state.deviceId}`;
+    // Topic includes password for security: timer12/<mac>/<password>/<subtopic>
+    const baseTopic = `timer12/${state.deviceId}/${state.password}`;
     const clientId = `pwa-${Math.random().toString(16).slice(2, 10)}`;
 
     console.log(`[MQTT] Connecting to ${MQTT_BROKER_URL} as ${clientId}...`);
@@ -154,12 +162,24 @@ export function disconnectMqtt() {
 // Publish a command to the ESP32 via MQTT
 // ---------------------------------------------------------------------------
 export function publishCommand(command: Record<string, unknown>): boolean {
-  if (!state.client || !state.connected || !state.deviceId) {
+  if (!state.client || !state.connected || !state.deviceId || !state.password) {
     console.warn('[MQTT] Not connected — cannot publish command');
     return false;
   }
-  const topic = `timer12/${state.deviceId}/command`;
+  const topic = `timer12/${state.deviceId}/${state.password}/command`;
   const payload = JSON.stringify(command);
+  state.client.publish(topic, payload, { qos: 1 });
+  return true;
+}
+
+// Publish OTA update command via MQTT
+export function publishOtaUpdate(url: string, version: string): boolean {
+  if (!state.client || !state.connected || !state.deviceId || !state.password) {
+    console.warn('[MQTT] Not connected — cannot publish OTA');
+    return false;
+  }
+  const topic = `timer12/${state.deviceId}/${state.password}/ota`;
+  const payload = JSON.stringify({ action: 'update', url, version });
   state.client.publish(topic, payload, { qos: 1 });
   return true;
 }
@@ -212,4 +232,8 @@ export const mqttApi = {
     publishCommand({ type: 'system', action: 'reboot' }),
   getStatus: () =>
     publishCommand({ type: 'system', action: 'getStatus' }),
+  resetEnergyStats: () =>
+    publishCommand({ type: 'system', action: 'resetEnergyStats' }),
+  otaUpdate: (url: string, version: string) =>
+    publishOtaUpdate(url, version),
 };

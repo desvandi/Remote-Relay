@@ -43,6 +43,9 @@ export type Channel = {
   state: boolean;          // actual relay state
   source: RelaySource;     // why it's currently ON/OFF
   hasPir: boolean;         // PIR sensor mapped to this channel (ch 9-12)
+  // Energy monitoring (software-estimated)
+  energyWh?: number;       // accumulated watt-hours since last reset
+  wattage?: number;        // user-configured load wattage (W)
 };
 
 // ---------- SCHEDULE ----------

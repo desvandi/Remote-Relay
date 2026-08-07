@@ -22,8 +22,9 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // MQTT device ID input
+  // MQTT device ID + password input
   const [macInput, setMacInput] = useState('');
+  const [mqttPassInput, setMqttPassInput] = useState('');
   const [mqttLoading, setMqttLoading] = useState(false);
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -42,13 +43,18 @@ export function LoginForm() {
   const onMqttConnect = async (e: React.FormEvent) => {
     e.preventDefault();
     const mac = macInput.trim().toUpperCase().replace(/[^A-F0-9]/g, '');
+    const pass = mqttPassInput.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (mac.length !== 12) {
       toast.error('Device ID must be 12 hex characters (e.g., A4CF12345678)');
       return;
     }
+    if (pass.length < 4) {
+      toast.error('MQTT password must be at least 4 chars (found in Serial Monitor)');
+      return;
+    }
     setMqttLoading(true);
     try {
-      await connect(mac);
+      await connect(mac, pass);
       toast.success('Connected to ESP32 via MQTT');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'MQTT connection failed');
@@ -221,6 +227,23 @@ export function LoginForm() {
                     />
                     <p className="text-[11px] text-muted-foreground">
                       Found in Serial Monitor: <code className="font-mono">MAC: XXXXXXXXXXXX</code>
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="mqttPass">MQTT Password</Label>
+                    <Input
+                      id="mqttPass"
+                      type="text"
+                      value={mqttPassInput}
+                      onChange={(e) => setMqttPassInput(e.target.value)}
+                      placeholder="e.g., K7M3P9XQ"
+                      className="font-mono uppercase"
+                      required
+                      disabled={mqttLoading}
+                      maxLength={12}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Found in Serial Monitor: <code className="font-mono">MQTT Password: XXXXXXXX</code>
                     </p>
                   </div>
                   <Button type="submit" className="w-full" disabled={mqttLoading}>
