@@ -234,6 +234,10 @@ export const mqttApi = {
     publishCommand({ type: 'system', action: 'getStatus' }),
   resetEnergyStats: () =>
     publishCommand({ type: 'system', action: 'resetEnergyStats' }),
+  resetDailyStats: () =>
+    publishCommand({ type: 'system', action: 'resetDailyStats' }),
+  setDeviceConfig: (opts: { deviceName?: string; timezone?: string }) =>
+    publishCommand({ type: 'config', action: 'setDevice', ...opts }),
   otaUpdate: (url: string, version: string) =>
     publishOtaUpdate(url, version),
 };

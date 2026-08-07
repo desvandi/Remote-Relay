@@ -362,9 +362,8 @@ export function useDeviceConfigMutation() {
   return useMutation({
     mutationFn: async (opts: { deviceName?: string; timezone?: string }) => {
       if (isMqttMode) {
-        // MQTT doesn't support device config changes — use LAN
-        toast.info('Device config changes require LAN connection');
-        return { updated: false };
+        mqttApi.setDeviceConfig(opts);
+        return { updated: true };
       }
       return api.updateDevice(opts);
     },
@@ -372,8 +371,8 @@ export function useDeviceConfigMutation() {
       if (!isMqttMode) {
         qc.invalidateQueries({ queryKey: ['status'] });
         qc.invalidateQueries({ queryKey: ['config'] });
-        toast.success(t('toast.saved'));
       }
+      toast.success(t('toast.saved'));
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : t('toast.error')),
   });
