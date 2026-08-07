@@ -74,6 +74,20 @@ export function DashboardView() {
         />
       </div>
 
+      {/* RTC warning if time not set */}
+      {status.currentTime > 0 && status.currentTime < 86400000000000 && new Date(status.currentTime).getFullYear() < 2026 && (
+        <div className="rounded-lg border border-status-warn/30 bg-status-warn/5 px-4 py-3 flex items-start gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-status-warn flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-status-warn">RTC belum diset</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Waktu ESP32 tidak valid (RTC DS3231 belum disinkronkan).
+              Buka <b>Settings → Set RTC Time → Sync Now</b> untuk mengatur waktu sekarang.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* System info row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
         <MiniStat icon={Clock} label={t('dashboard.uptime')} value={formatUptime(status.uptimeSeconds, lang)} />
@@ -81,7 +95,16 @@ export function DashboardView() {
         <MiniStat icon={HardDrive} label={t('dashboard.free_heap')} value={`${Math.round(status.freeHeap / 1024)} KB`} />
         <MiniStat icon={Activity} label={t('dashboard.flash_free')} value={`${status.flashFreePercent}%`} />
         <MiniStat icon={Signal} label={t('dashboard.wifi_rssi')} value={`${status.wifiRssi} dBm (${rssi.bars}/4)`} />
-        <MiniStat icon={Clock} label={t('dashboard.current_time')} value={formatTime(status.currentTime, status.timezone, lang)} mono />
+        <MiniStat
+          icon={Clock}
+          label={t('dashboard.current_time')}
+          value={
+            status.currentTime > 0 && new Date(status.currentTime).getFullYear() < 2026
+              ? '⚠ Not set'
+              : formatTime(status.currentTime, status.timezone, lang)
+          }
+          mono
+        />
       </div>
 
       {/* Power monitoring (PZEM-004T v3.0) */}
