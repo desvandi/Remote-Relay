@@ -289,7 +289,6 @@ function BackupRestoreCard() {
 }
 
 function RebootCard() {
-  const { t } = useLanguage();
   const mutation = useReboot();
   return (
     <Card className="border-border/60">

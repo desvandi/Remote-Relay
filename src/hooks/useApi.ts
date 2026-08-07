@@ -4,11 +4,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { mqttApi } from '@/lib/mqtt';
 import { useAuth } from '@/components/providers/auth-provider';
-import { useMqtt, useMqttStatus, useMqttLogs } from '@/components/providers/mqtt-provider';
+import { useMqttStatus, useMqttLogs } from '@/components/providers/mqtt-provider';
 import { toast } from 'sonner';
 import { useLanguage } from '@/components/providers/language-provider';
 import { useEffect } from 'react';
-import type { RelayMutation, Schedule, SystemConfig, SystemStatus, ActivityLog } from '@/lib/types';
+import type { RelayMutation, Schedule, SystemConfig } from '@/lib/types';
 
 // ---------- Status (hybrid REST/MQTT) ----------
 export function useStatus() {

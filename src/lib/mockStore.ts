@@ -118,7 +118,6 @@ function defaultChannels(): Channel[] {
 
 function defaultSchedules(): Schedule[] {
   // A few starter schedules so the demo isn't empty
-  const now = new Date();
   return [
     { id: G.nextScheduleId++, channelId: 1, onTime: '18:00', offTime: '06:00', dayMask: 0, enabled: true },
     { id: G.nextScheduleId++, channelId: 2, onTime: '19:00', offTime: '05:30', dayMask: 0b1111110, enabled: true }, // Mon-Sat

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, verifyCsrfToken } from '@/lib/auth';
-import { factoryReset } from '@/lib/mockStore';
+
 import { ok, fail, unauthorized } from '@/lib/apiResponse';
 
 export const runtime = 'nodejs';

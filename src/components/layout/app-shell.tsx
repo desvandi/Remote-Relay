@@ -18,7 +18,7 @@ import {
   Zap,
   LogOut,
   Menu,
-  X,
+  
   Wifi,
   WifiOff,
   Radio,
@@ -59,7 +59,7 @@ const NAV_ITEMS: NavItem[] = [
 const MOBILE_NAV: ViewKey[] = ['dashboard', 'scheduler', 'pir', 'logs', 'energy'];
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { currentView, setView, sidebarCollapsed, toggleSidebar } = useUiStore();
+  const { currentView, setView } = useUiStore();
   const { t, lang } = useLanguage();
   const { logout, session } = useAuth();
   const { data: version } = useVersion();
@@ -79,7 +79,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const rssiInfo = status ? formatRssi(status.wifiRssi) : null;
   const hasRestApi = !!process.env.NEXT_PUBLIC_API_BASE_URL;
-  const { connected: mqttConnected, deviceId } = useMqtt();
+  const { connected: mqttConnected } = useMqtt();
   const { isMqttMode } = useAuth();
   // Show "mock" only if no REST API AND no MQTT connection
   const isMock = !hasRestApi && !isMqttMode;

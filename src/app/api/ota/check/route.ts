@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import { requireAuth, verifyCsrfToken } from '@/lib/auth';
-import { getFirmwareInfo, getStore } from '@/lib/mockStore';
+import { requireAuth } from '@/lib/auth';
+import { getFirmwareInfo } from '@/lib/mockStore';
 import { ok, unauthorized } from '@/lib/apiResponse';
 
 export const runtime = 'nodejs';

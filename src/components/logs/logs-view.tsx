@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useLanguage } from '@/components/providers/language-provider';
 import { useStatus, useLogs } from '@/hooks/useApi';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -43,7 +43,6 @@ export function LogsView() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [limit, setLimit] = useState(100);
 
-  const enabled = !!status;
   const { data, isLoading } = useLogs({
     type: typeFilter,
     channelId: channelFilter === 'all' ? undefined : Number(channelFilter),

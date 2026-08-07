@@ -2,8 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import {
-  connectMqtt, disconnectMqtt, isMqttConnected,
-  getMqttDeviceId, setMqttDeviceId,
+  connectMqtt, disconnectMqtt,
   onOnlineChange, onStatusChange, onLog,
 } from '@/lib/mqtt';
 import type { SystemStatus as FullSystemStatus, ActivityLog as FullActivityLog } from '@/lib/types';

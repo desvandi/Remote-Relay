@@ -1,8 +1,7 @@
 'use client';
 
-import { useLanguage } from '@/components/providers/language-provider';
 import { useMqtt } from '@/components/providers/mqtt-provider';
-import { useAiInsights, isGasConfigured, getGasUrl } from '@/lib/aiInsights';
+import { useAiInsights, isGasConfigured } from '@/lib/aiInsights';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -40,7 +39,7 @@ const CATEGORY_LABELS: Record<InsightCategory, string> = {
 };
 
 export function AiView() {
-  const { t } = useLanguage();
+  
   const { deviceId } = useMqtt();
   const { data: insights, isLoading } = useAiInsights(deviceId);
   const gasConfigured = isGasConfigured();

@@ -4,7 +4,7 @@
 
 import { cookies } from 'next/headers';
 import { verifyJwt, generateRandomToken } from '@/lib/jwt';
-import { getStore, getJwtSecret } from '@/lib/mockStore';
+import { getJwtSecret } from '@/lib/mockStore';
 
 export const JWT_COOKIE = 'timer12_jwt';
 export const CSRF_COOKIE = 'timer12_csrf';
@@ -17,7 +17,7 @@ export type AuthResult = {
 };
 
 export async function getSession(): Promise<AuthResult> {
-  const store = await getStore();
+  
   const cookieStore = await cookies();
   const token = cookieStore.get(JWT_COOKIE)?.value;
   if (!token) return { authenticated: false, username: null, expiresAt: null };
@@ -39,7 +39,7 @@ export async function requireAuth(): Promise<{ ok: true; username: string } | { 
 }
 
 export async function createSession(username: string) {
-  const store = await getStore();
+  
   const token = signSession(username, SESSION_TTL_SECONDS);
   const csrfToken = generateRandomToken(32);
   const cookieStore = await cookies();

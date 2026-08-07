@@ -8,7 +8,7 @@ export const runtime = 'nodejs';
 // Simple in-memory rate limiter
 const rateMap = new Map<string, { count: number; firstAt: number; blockedUntil: number }>();
 const MAX_ATTEMPTS = 5;
-const WINDOW_MS = 60_000;
+
 const BLOCK_MS = 60_000;
 
 export async function POST(req: NextRequest) {

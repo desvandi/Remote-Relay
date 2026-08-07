@@ -26,7 +26,7 @@ import { toast } from 'sonner';
 
 export function EnergyAnalyticsView() {
   const { data: status, isLoading } = useStatus();
-  const { t, lang } = useLanguage();
+  const { lang } = useLanguage();
   const [tariff, setTariffState] = useState(getTariff());
   const [chartData, setChartData] = useState<Array<{ time: string; power: number; voltage: number; current: number }>>([]);
 

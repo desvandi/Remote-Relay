@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Radar, Activity, AlertTriangle, Zap, Clock, FlaskConical, Power,
+  Radar, Activity, AlertTriangle, Clock, FlaskConical,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/format';
