@@ -168,6 +168,7 @@ export type TranslationKey =
   | 'toast.ota_started'
   | 'toast.ota_success'
   | 'toast.ota_failed'
+  | 'ota.ota_failed'
   | 'toast.time_synced'
   | 'toast.rebooting'
   // Theme
@@ -330,6 +331,7 @@ const id: Dict = {
   'toast.ota_started': 'OTA update dimulai',
   'toast.ota_success': 'OTA update berhasil',
   'toast.ota_failed': 'OTA update gagal',
+  'ota.ota_failed': 'OTA Gagal',
   'toast.time_synced': 'Waktu RTC disinkronkan',
   'toast.rebooting': 'Sistem melakukan reboot...',
   'theme.light': 'Mode Terang',
@@ -490,6 +492,7 @@ const en: Dict = {
   'toast.ota_started': 'OTA update started',
   'toast.ota_success': 'OTA update successful',
   'toast.ota_failed': 'OTA update failed',
+  'ota.ota_failed': 'OTA Failed',
   'toast.time_synced': 'RTC time synchronized',
   'toast.rebooting': 'System rebooting...',
   'theme.light': 'Light Mode',

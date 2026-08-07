@@ -25,7 +25,7 @@ export async function getSession(): Promise<AuthResult> {
   if (!payload) return { authenticated: false, username: null, expiresAt: null };
   return {
     authenticated: true,
-    username: payload.sub,
+    username: payload.sub ?? null,
     expiresAt: payload.exp,
   };
 }

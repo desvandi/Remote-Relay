@@ -117,7 +117,7 @@ export const api = {
   logs: (filter?: { type?: string; channelId?: number; limit?: number }) => {
     const params = new URLSearchParams();
     if (filter?.type && filter.type !== 'all') params.set('type', filter.type);
-    if (filter?.channelId && filter.channelId !== 'all') params.set('channelId', String(filter.channelId));
+    if (filter?.channelId && String(filter.channelId) !== 'all') params.set('channelId', String(filter.channelId));
     if (filter?.limit) params.set('limit', String(filter.limit));
     const q = params.toString();
     return request<{ logs: import('@/lib/types').ActivityLog[]; total: number }>(

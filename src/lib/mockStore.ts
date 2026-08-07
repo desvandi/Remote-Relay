@@ -666,10 +666,11 @@ export function getSystemStatus(): SystemStatus {
     timezone: G.state.timezone,
     wifiRssi,
     freeHeap,
-    cpuLoad,
-    flashFree,
+    cpuLoadPercent: cpuLoad,
+    flashFreePercent: flashFree,
     channels: G.state.channels,
     pirs: G.state.pirs,
+    schedules: G.state.schedules,
     stats: {
       relaysOn,
       schedulesActive,

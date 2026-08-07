@@ -7,7 +7,7 @@ import { useAuth } from '@/components/providers/auth-provider';
 import { useMqtt, useMqttStatus, useMqttLogs } from '@/components/providers/mqtt-provider';
 import { toast } from 'sonner';
 import { useLanguage } from '@/components/providers/language-provider';
-import { useEffect, type RefetchOptions } from 'react';
+import { useEffect } from 'react';
 import type { RelayMutation, Schedule, SystemConfig, SystemStatus, ActivityLog } from '@/lib/types';
 
 // ---------- Status (hybrid REST/MQTT) ----------
@@ -35,7 +35,7 @@ export function useStatus() {
     return {
       data: mqttStatus ?? undefined,
       isLoading: !mqttStatus,
-      refetch: async (_opts?: RefetchOptions) => { mqttApi.getStatus(); },
+      refetch: async () => { mqttApi.getStatus(); },
     };
   }
   return restQuery;
@@ -113,7 +113,7 @@ export function useLogs(filter?: { type?: string; channelId?: number; limit?: nu
     if (filter?.type && filter.type !== 'all') {
       logs = logs.filter((l) => l.type === filter.type);
     }
-    if (filter?.channelId && filter.channelId !== 'all') {
+    if (filter?.channelId && String(filter.channelId) !== 'all') {
       logs = logs.filter((l) => l.channelId === filter.channelId);
     }
     return { data: { logs, total: logs.length }, isLoading: false };

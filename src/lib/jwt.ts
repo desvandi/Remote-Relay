@@ -18,7 +18,7 @@ function base64urlDecode(input: string): Buffer {
 }
 
 type JwtPayload = {
-  sub: string;       // username
+  sub?: string;       // username (optional for mock)
   iat: number;       // issued at (ms epoch)
   exp: number;       // expiry (ms epoch)
   [key: string]: unknown;
