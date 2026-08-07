@@ -678,5 +678,11 @@ export function getSystemStatus(): SystemStatus {
       errorsToday,
     },
     online: true,
+    // ACS712 mock data (simulated for demo mode)
+    acs712Available: true,
+    totalCurrentA: relaysOn * 0.15 + Math.random() * 0.1,
+    totalPowerW: relaysOn * 33 + Math.random() * 10,
+    totalEnergyWh: relaysOn * 5.5 + Math.random() * 2,
+    currents: [0.15, 0.0, 0.0, 0.0],
   };
 }

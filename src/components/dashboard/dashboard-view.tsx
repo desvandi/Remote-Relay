@@ -84,6 +84,16 @@ export function DashboardView() {
         <MiniStat icon={Clock} label={t('dashboard.current_time')} value={formatTime(status.currentTime, status.timezone, lang)} mono />
       </div>
 
+      {/* Power monitoring (ACS712) */}
+      {status.acs712Available && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatCard icon={Zap} label="Total Current" value={`${(status.totalCurrentA ?? 0).toFixed(2)} A`} accent="info" />
+          <StatCard icon={Zap} label="Total Power" value={`${(status.totalPowerW ?? 0).toFixed(0)} W`} accent="on" />
+          <StatCard icon={Activity} label="Total Energy" value={`${(status.totalEnergyWh ?? 0).toFixed(1)} Wh`} accent="warn" />
+          <StatCard icon={Activity} label="Est. Cost" value={`Rp ${((status.totalEnergyWh ?? 0) / 1000 * 1467).toFixed(0)}`} accent="off" />
+        </div>
+      )}
+
       {/* Relay grid */}
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider">

@@ -124,6 +124,12 @@ export type SystemStatus = {
     errorsToday: number;
   };
   online: boolean;
+  // ACS712 power monitoring (optional, via ADS1115)
+  acs712Available?: boolean;
+  totalCurrentA?: number;       // total current (Amperes)
+  totalPowerW?: number;         // total power (Watts)
+  totalEnergyWh?: number;       // total accumulated energy (Watt-hours)
+  currents?: number[];          // per-sensor current readings
 };
 
 // ---------- CONFIG ----------
