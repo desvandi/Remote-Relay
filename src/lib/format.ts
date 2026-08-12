@@ -87,3 +87,13 @@ export function daysToDayMask(days: boolean[]): number {
   }
   return mask;
 }
+
+/**
+ * Strict HH:MM validation — numeric range check, not just regex.
+ * Rejects "99:99" which would pass regex ^\d{2}:\d{2}$
+ */
+export function isValidTimeFormat(time: string): boolean {
+  if (!/^\d{2}:\d{2}$/.test(time)) return false;
+  const [h, m] = time.split(':').map(Number);
+  return h >= 0 && h <= 23 && m >= 0 && m <= 59;
+}

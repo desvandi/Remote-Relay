@@ -4,7 +4,7 @@
 // secret burned into NVS. This mock uses HS256 with a static secret.
 // =============================================================================
 
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHmac, timingSafeEqual, randomBytes } from 'crypto';
 
 const ALG = 'HS256';
 
@@ -61,10 +61,12 @@ export function verifyJwt(token: string, secret: string): JwtPayload | null {
 }
 
 export function generateRandomToken(length = 32): string {
+  // Use CSPRNG (crypto.randomBytes) instead of Math.random() for security tokens
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = randomBytes(length);
   let out = '';
   for (let i = 0; i < length; i++) {
-    out += chars[Math.floor(Math.random() * chars.length)];
+    out += chars[bytes[i] % chars.length];
   }
   return out;
 }

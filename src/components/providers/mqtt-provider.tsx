@@ -25,23 +25,21 @@ function getInitialDeviceId(): string | null {
   return null;
 }
 
-function getInitialPassword(): string | null {
-  if (typeof localStorage !== 'undefined') {
-    return localStorage.getItem('timer12-mqtt-password');
-  }
-  return null;
-}
+// NOTE: Password is intentionally NOT persisted in localStorage.
+// It lives only in memory (session). User must re-enter on each app open.
+// This prevents credential theft via XSS or browser extensions.
 
 export function MqttProvider({ children }: { children: ReactNode }) {
   const [deviceId, setDeviceIdState] = useState<string | null>(getInitialDeviceId);
-  const [password, setPasswordState] = useState<string | null>(getInitialPassword);
+  const [password, setPasswordState] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
+    // Only auto-connect if both deviceId AND password are available
+    // Password is NOT persisted, so auto-connect won't happen after page reload
     const id = getInitialDeviceId();
-    const pass = getInitialPassword();
-    if (id && pass) {
-      connectMqtt(id, pass).catch((err) => {
+    if (id && password) {
+      connectMqtt(id, password).catch((err) => {
         console.error('[MqttProvider] Auto-connect failed:', err);
       });
     }
@@ -51,12 +49,12 @@ export function MqttProvider({ children }: { children: ReactNode }) {
       unsubOnline();
       disconnectMqtt();
     };
-  }, []);
+  }, [password]);
 
   const connect = useCallback(async (id: string, pass: string) => {
+    // Only persist deviceId (not password) — security best practice
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('timer12-mqtt-device-id', id);
-      localStorage.setItem('timer12-mqtt-password', pass);
     }
     setDeviceIdState(id);
     setPasswordState(pass);
@@ -68,7 +66,6 @@ export function MqttProvider({ children }: { children: ReactNode }) {
     disconnectMqtt();
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem('timer12-mqtt-device-id');
-      localStorage.removeItem('timer12-mqtt-password');
     }
     setDeviceIdState(null);
     setPasswordState(null);

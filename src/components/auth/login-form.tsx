@@ -17,8 +17,8 @@ export function LoginForm() {
   const { login } = useAuth();
   const { connect, disconnect, connected, deviceId } = useMqtt();
   const { t } = useLanguage();
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

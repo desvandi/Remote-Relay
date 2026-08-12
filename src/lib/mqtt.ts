@@ -166,9 +166,19 @@ export function publishCommand(command: Record<string, unknown>): boolean {
     console.warn('[MQTT] Not connected — cannot publish command');
     return false;
   }
+  // Add requestId for command tracking + ACK
+  const commandWithId = {
+    ...command,
+    requestId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  };
   const topic = `timer12/${state.deviceId}/${state.password}/command`;
-  const payload = JSON.stringify(command);
-  state.client.publish(topic, payload, { qos: 1 });
+  const payload = JSON.stringify(commandWithId);
+  const result = state.client.publish(topic, payload, { qos: 1 });
+  // mqtt.js publish returns true on success, false if client not connected
+  if (!result) {
+    console.error('[MQTT] Publish failed — client not connected');
+    return false;
+  }
   return true;
 }
 

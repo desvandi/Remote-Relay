@@ -23,17 +23,22 @@ import type {
   RelaySource,
 } from '@/lib/types';
 
-const DATA_DIR = '/home/z/my-project/.data';
+// Use relative path that works in any environment (dev + Vercel)
+const DATA_DIR = process.env.NODE_ENV === 'production'
+  ? '/tmp/timer12-data'  // Vercel serverless: /tmp is writable
+  : path.join(process.cwd(), '.data');
 const STATE_FILE = path.join(DATA_DIR, 'mock-state.json');
 const LOG_FILE = path.join(DATA_DIR, 'mock-logs.json');
 
+// Demo mode flag — when false, mock API routes return 403 (disabled)
+const DEMO_MODE = process.env.NODE_ENV === 'development' || process.env.DEMO_MODE === 'true';
+
 // Default credentials (demo only — DO NOT use in production)
-const DEFAULT_USER = 'admin';
-// PBKDF2-HMAC-SHA256 hash of "admin123" with 10000 iterations, salted.
-// In real firmware, this is stored in flash with random salt per device.
-// For mock purposes we just store the plaintext-equivalent hash.
-const DEFAULT_PASSWORD_HASH = 'admin123'; // mock only
-const JWT_SECRET = 'timer12-mock-jwt-secret-v4'; // mock only
+// In production (DEMO_MODE=false), these are rejected and user must set
+// MOCK_USER + MOCK_PASSWORD env vars, or use real ESP32 via MQTT
+const DEFAULT_USER = process.env.MOCK_USER || 'admin';
+const DEFAULT_PASSWORD_HASH = process.env.MOCK_PASSWORD || 'admin123';
+const JWT_SECRET = process.env.JWT_SECRET || (DEMO_MODE ? 'timer12-demo-only-secret' : '');
 
 const NUM_CHANNELS = 12;
 const NUM_PIR = 4;

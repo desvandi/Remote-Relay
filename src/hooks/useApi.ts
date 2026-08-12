@@ -130,12 +130,16 @@ export function useRelayMutation() {
   return useMutation({
     mutationFn: async (mutation: RelayMutation) => {
       if (isMqttMode) {
-        // MQTT: publish command, ESP32 will respond with updated status
-        if (mutation.action === 'toggle') mqttApi.relayToggle(mutation.channelId);
-        else if (mutation.action === 'on') mqttApi.relayOn(mutation.channelId);
-        else if (mutation.action === 'off') mqttApi.relayOff(mutation.channelId);
+        // MQTT: publish command — check if publish actually succeeded
+        let success = false;
+        if (mutation.action === 'toggle') success = mqttApi.relayToggle(mutation.channelId);
+        else if (mutation.action === 'on') success = mqttApi.relayOn(mutation.channelId);
+        else if (mutation.action === 'off') success = mqttApi.relayOff(mutation.channelId);
         else if (mutation.action === 'set_mode') {
-          mqttApi.relaySetMode(mutation.channelId, mutation.mode ?? 'auto', mutation.manualState);
+          success = mqttApi.relaySetMode(mutation.channelId, mutation.mode ?? 'auto', mutation.manualState);
+        }
+        if (!success) {
+          throw new Error('MQTT publish failed — device may be offline');
         }
         return { channel: null };
       }

@@ -29,7 +29,7 @@ const MQTT_SESSION: SessionInfo = {
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { connected: mqttConnected } = useMqtt();
+  const { connected: mqttConnected, disconnect: mqttDisconnect } = useMqtt();
   const [session, setSession] = useState<SessionInfo>(DEFAULT_SESSION);
   const [loading, setLoading] = useState(true);
 
@@ -77,7 +77,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     if (mqttConnected) {
-      // In MQTT mode, logout just clears local state but stays connected
+      // In MQTT mode: disconnect MQTT + clear credentials + clear session
+      mqttDisconnect();
       setSession(DEFAULT_SESSION);
       return;
     }
@@ -88,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setCsrfToken(null);
     setSession(DEFAULT_SESSION);
-  }, [mqttConnected]);
+  }, [mqttConnected, mqttDisconnect]);
 
   return (
     <AuthContext.Provider value={{
