@@ -34,11 +34,16 @@ const LOG_FILE = path.join(DATA_DIR, 'mock-logs.json');
 const DEMO_MODE = process.env.NODE_ENV === 'development' || process.env.DEMO_MODE === 'true';
 
 // PRODUCTION GUARD: mock auth must NEVER work in production without explicit env vars
-if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET && !process.env.DEMO_MODE) {
-  throw new Error(
-    'FATAL: JWT_SECRET environment variable is required in production. ' +
-    'Set DEMO_MODE=true for demo deployment, or use MQTT mode (real ESP32).'
-  );
+// Note: This check runs at runtime (when mock API routes are called), NOT at build time.
+// Vercel build runs in production mode — throwing at module load would break the build.
+// If user only uses MQTT mode (no mock API), this code is never reached at runtime.
+function assertMockAuthConfigured(): void {
+  if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET && !process.env.DEMO_MODE) {
+    throw new Error(
+      'FATAL: Mock API auth requires JWT_SECRET or DEMO_MODE=true in production. ' +
+      'If using MQTT mode only (real ESP32), mock API routes are not needed.'
+    );
+  }
 }
 
 // Default credentials (demo only — DO NOT use in production)
@@ -392,11 +397,13 @@ export function appendLogExternal(type: LogType, message: string, channelId: num
 
 // ---------- Auth ----------
 export function verifyCredentials(username: string, password: string): boolean {
+  assertMockAuthConfigured(); // Runtime guard — only throws when mock API is actually called
   if (!G.state) return false;
   return G.state.username === username && G.state.passwordHash === password;
 }
 
 export function getJwtSecret(): string {
+  assertMockAuthConfigured(); // Runtime guard — only throws when mock API is actually called
   return JWT_SECRET;
 }
 
