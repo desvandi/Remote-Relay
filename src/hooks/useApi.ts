@@ -156,7 +156,7 @@ export function useRelayMutation() {
   });
 }
 
-// ---------- Channel rename (hybrid REST/MQTT) ----------
+// ---------- Channel rename (hybrid REST/MQTT with ACK) ----------
 export function useRenameChannel() {
   const qc = useQueryClient();
   const { t } = useLanguage();
@@ -165,7 +165,9 @@ export function useRenameChannel() {
   return useMutation({
     mutationFn: async ({ channelId, name }: { channelId: number; name: string }) => {
       if (isMqttMode) {
-        mqttApi.channelRename(channelId, name);
+        await sendCommandWithAck({
+          type: 'channel', action: 'rename', channelId, name,
+        });
         return { channel: { id: channelId, name } };
       }
       return api.channelRename(channelId, name);
@@ -181,7 +183,7 @@ export function useRenameChannel() {
   });
 }
 
-// ---------- Schedule mutation (hybrid REST/MQTT) ----------
+// ---------- Schedule mutation (hybrid REST/MQTT with ACK) ----------
 export function useScheduleMutation() {
   const qc = useQueryClient();
   const { t } = useLanguage();
@@ -190,7 +192,9 @@ export function useScheduleMutation() {
   return useMutation({
     mutationFn: async (sched: Schedule) => {
       if (isMqttMode) {
-        mqttApi.scheduleUpsert(sched);
+        await sendCommandWithAck({
+          type: 'schedule', action: 'upsert', ...sched,
+        });
         return { schedule: sched };
       }
       return api.schedule(sched);
@@ -214,7 +218,7 @@ export function useScheduleDelete() {
   return useMutation({
     mutationFn: async (id: number) => {
       if (isMqttMode) {
-        mqttApi.scheduleDelete(id);
+        await sendCommandWithAck({ type: 'schedule', action: 'delete', id });
         return { deleted: true };
       }
       return api.scheduleDelete(id);
@@ -239,7 +243,7 @@ export function usePirMutation() {
   return useMutation({
     mutationFn: async ({ id, ...opts }: { id: number; enabled?: boolean; holdTime?: number }) => {
       if (isMqttMode) {
-        mqttApi.pirConfig(id, opts);
+        await sendCommandWithAck({ type: 'pir', action: 'config', id, ...opts });
         return { pir: null };
       }
       return api.pir(id, opts);
@@ -262,7 +266,7 @@ export function usePirTest() {
   return useMutation({
     mutationFn: async (id: number) => {
       if (isMqttMode) {
-        mqttApi.pirTest(id);
+        await sendCommandWithAck({ type: 'pir', action: 'test', id });
         return { triggered: true };
       }
       return api.pirTest(id);
@@ -281,7 +285,7 @@ export function useTimeMutation() {
   return useMutation({
     mutationFn: async (datetime: string) => {
       if (isMqttMode) {
-        mqttApi.setTime(datetime);
+        await sendCommandWithAck({ type: 'time', action: 'set', datetime });
         return { synced: true };
       }
       return api.time(datetime);
@@ -346,7 +350,7 @@ export function useReboot() {
   return useMutation({
     mutationFn: async () => {
       if (isMqttMode) {
-        mqttApi.reboot();
+        await sendCommandWithAck({ type: 'system', action: 'reboot' });
         return { rebooting: true };
       }
       return api.reboot();
@@ -365,7 +369,7 @@ export function useDeviceConfigMutation() {
   return useMutation({
     mutationFn: async (opts: { deviceName?: string; timezone?: string }) => {
       if (isMqttMode) {
-        mqttApi.setDeviceConfig(opts);
+        await sendCommandWithAck({ type: 'config', action: 'setDevice', ...opts });
         return { updated: true };
       }
       return api.updateDevice(opts);

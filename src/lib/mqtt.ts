@@ -6,9 +6,14 @@
 import mqtt from 'mqtt';
 import type { SystemStatus, ActivityLog } from './types';
 
-// HiveMQ public broker — free, no signup, no auth
-// WSS (WebSocket Secure) required for Vercel HTTPS
-const MQTT_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
+// MQTT Broker URL — configurable via env var for production (self-hosted broker)
+// Default: HiveMQ public broker (free, no auth, for demo/MVP)
+// Production: set NEXT_PUBLIC_MQTT_BROKER_URL to your authenticated broker
+//   e.g., wss://your-broker.com:8884/mqtt (with username/password)
+// Also set NEXT_PUBLIC_MQTT_USERNAME + NEXT_PUBLIC_MQTT_PASSWORD for auth
+const MQTT_BROKER_URL = process.env.NEXT_PUBLIC_MQTT_BROKER_URL || 'wss://broker.hivemq.com:8884/mqtt';
+const MQTT_BROKER_USERNAME = process.env.NEXT_PUBLIC_MQTT_USERNAME || '';
+const MQTT_BROKER_PASSWORD = process.env.NEXT_PUBLIC_MQTT_PASSWORD || '';
 
 type MqttState = {
   client: mqtt.MqttClient | null;
@@ -92,6 +97,9 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
       reconnectPeriod: 5000,
       connectTimeout: 10000,
       clean: true,
+      // Include username/password if configured (for self-hosted authenticated broker)
+      ...(MQTT_BROKER_USERNAME ? { username: MQTT_BROKER_USERNAME } : {}),
+      ...(MQTT_BROKER_PASSWORD ? { password: MQTT_BROKER_PASSWORD } : {}),
     });
 
     state.client = client;
@@ -166,6 +174,12 @@ export function disconnectMqtt() {
   }
   state.connected = false;
   state.deviceId = null;
+  state.password = null;
+  // Cancel all pending ACK transactions — prevents hanging promises
+  // Import lazily to avoid circular dependency
+  import('./mqttTransaction').then(({ cancelAllPendingCommands }) => {
+    cancelAllPendingCommands();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -176,15 +190,11 @@ export function publishCommand(command: Record<string, unknown>): boolean {
     console.warn('[MQTT] Not connected — cannot publish command');
     return false;
   }
-  // Add requestId for command tracking + ACK
-  const commandWithId = {
-    ...command,
-    requestId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  };
+  // Do NOT generate requestId here — caller (sendCommandWithAck) provides it
+  // This prevents double-requestId bug
   const topic = `timer12/${state.deviceId}/${state.password}/command`;
-  const payload = JSON.stringify(commandWithId);
+  const payload = JSON.stringify(command);
   const result = state.client.publish(topic, payload, { qos: 1 });
-  // mqtt.js publish returns true on success, false if client not connected
   if (!result) {
     console.error('[MQTT] Publish failed — client not connected');
     return false;
@@ -231,8 +241,7 @@ export function onAck(cb: (ack: { requestId: string; success: boolean; message: 
 // Convenience command publishers (mirror REST API endpoints)
 // ---------------------------------------------------------------------------
 export const mqttApi = {
-  relayToggle: (channelId: number) =>
-    publishCommand({ type: 'relay', action: 'toggle', channelId }),
+  // Relay: only SET_STATE (on/off/set_mode) — no TOGGLE for idempotency
   relayOn: (channelId: number) =>
     publishCommand({ type: 'relay', action: 'on', channelId }),
   relayOff: (channelId: number) =>

@@ -16,6 +16,12 @@ const ACK_TIMEOUT_MS = 5000; // 5 seconds
 // Subscribe to ACK events — match requestId to pending commands
 let ackSubscriptionInitialized = false;
 
+function generateRequestId(): string {
+  // Use crypto.randomUUID() — no Math.random() fallback
+  // All modern browsers (2024+) support crypto.randomUUID()
+  return crypto.randomUUID();
+}
+
 function initAckSubscription() {
   if (ackSubscriptionInitialized) return;
   ackSubscriptionInitialized = true;
@@ -35,6 +41,18 @@ function initAckSubscription() {
 }
 
 /**
+ * Cancel all pending commands — called on disconnect/logout/error.
+ * Rejects all pending promises with 'Connection closed' error.
+ */
+export function cancelAllPendingCommands(): void {
+  for (const [id, pending] of pendingCommands) {
+    clearTimeout(pending.timeoutId);
+    pending.reject(new Error('MQTT connection closed — command cancelled'));
+    pendingCommands.delete(id);
+  }
+}
+
+/**
  * Send a command to ESP32 via MQTT and wait for ACK.
  * Returns a Promise that:
  *   - resolves when ESP32 publishes ACK with matching requestId
@@ -47,8 +65,8 @@ export function sendCommandWithAck(command: Record<string, unknown>): Promise<{ 
   initAckSubscription();
 
   return new Promise((resolve, reject) => {
-    // Generate requestId
-    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // Generate UUID requestId — single source of truth
+    const requestId = generateRequestId();
 
     // Set up timeout
     const timeoutId = setTimeout(() => {
@@ -64,7 +82,7 @@ export function sendCommandWithAck(command: Record<string, unknown>): Promise<{ 
       timeoutId,
     });
 
-    // Publish command (includes requestId)
+    // Publish command with requestId (publishCommand does NOT generate its own)
     const published = publishCommand({ ...command, requestId });
     if (!published) {
       clearTimeout(timeoutId);
