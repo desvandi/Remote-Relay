@@ -54,11 +54,24 @@ function initAckSubscription() {
       }
     }
 
+    // P1 #12 (audit round 9): For relay commands, ACK data is REQUIRED.
+    // If ACK is for a relay command and data is missing or incomplete,
+    // reject the ACK instead of resolving with incomplete data.
     const pending = pendingCommands.get(ack.requestId);
     if (pending) {
       clearTimeout(pending.timeoutId);
       pendingCommands.delete(ack.requestId);
       if (ack.success) {
+        // For relay commands, validate that ACK contains complete relay data
+        if (pending.commandType === 'relay') {
+          if (!ack.data || ack.data.channelId === undefined ||
+              ack.data.state === undefined || ack.data.source === undefined ||
+              ack.data.modeAuto === undefined) {
+            console.error('[MQTT] Relay ACK missing required data fields, rejecting:', ack);
+            pending.reject(new Error('Relay ACK incomplete — missing channelId/state/source/modeAuto'));
+            return;
+          }
+        }
         pending.resolve(ack);
       } else {
         pending.reject(new Error(ack.message || 'Command failed'));
@@ -73,13 +86,18 @@ function initAckSubscription() {
  *   - resolves when ESP32 publishes ACK with matching requestId
  *   - rejects after 5 seconds if no ACK received (timeout)
  *   - rejects if ACK indicates failure
- *   - ACK may contain `data` with actual relay state for immediate UI update
+ *   - For relay commands: rejects if ACK data is missing required fields
+ *     (channelId, state, source, modeAuto) — P1 #12 audit round 9
  */
-export function sendCommandWithAck(command: Record<string, unknown>): Promise<MqttAck> {
+export function sendCommandWithAck(
+  command: Record<string, unknown>,
+  options?: { commandType?: 'relay' | 'schedule' | 'pir' | 'channel' | 'time' | 'system' | 'config' | 'ota' }
+): Promise<MqttAck> {
   initAckSubscription();
 
   return new Promise((resolve, reject) => {
     const requestId = generateRequestId();
+    const commandType = options?.commandType || (command.type as string) || 'unknown';
 
     const timeoutId = setTimeout(() => {
       pendingCommands.delete(requestId);
@@ -91,6 +109,7 @@ export function sendCommandWithAck(command: Record<string, unknown>): Promise<Mq
       resolve,
       reject,
       timeoutId,
+      commandType,
     };
 
     pendingCommands.set(requestId, pending);

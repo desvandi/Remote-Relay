@@ -9,6 +9,7 @@ export type PendingCommand = {
   resolve: (ack: MqttAck) => void;
   reject: (error: Error) => void;
   timeoutId: ReturnType<typeof setTimeout>;
+  commandType?: string;  // P1 #12: used to validate ACK data shape per command type
 };
 
 export type RelayAckData = {
