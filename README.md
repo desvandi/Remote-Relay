@@ -7,9 +7,10 @@ Complete IoT system for controlling 12 relay channels + 4 PIR sensors + PZEM-004
 ```
                     ┌──────────────────────────────────────────┐
                     │           GitHub (source code)            │
-                    │  • Remote-Relay/      (this PWA)          │
-                    │  • firmware_v4/       (ESP32 code)        │
-                    │  • Code.gs            (AI Insights)       │
+                    │  • Remote-Relay/                       │
+                    │    (this PWA, deployed to Vercel)        │
+                    │  • Firmware-code-gs_relaytimer/         │
+                    │    (ESP32 firmware + Code.gs)            │
                     └──────────┬───────────────────────────────┘
                                │ git push → Vercel auto-deploy
                                ▼
@@ -171,6 +172,10 @@ ESP32                            HC-SR501 PIR ×4
 
 ## Firmware Configuration
 
+> 📦 **Firmware + Code.gs repo**: https://github.com/desvandi/Firmware-code-gs_relaytimer
+>
+> Contains all 53 ESP32 source files (flat layout for Arduino IDE compatibility) and `Code.gs` (Google Apps Script for AI insights). Clone that repo to flash the firmware.
+
 ### Libraries Required (Arduino IDE → Library Manager)
 | Library | Author | Version | Purpose |
 |---------|--------|---------|---------|
@@ -194,7 +199,7 @@ ESP32                            HC-SR501 PIR ×4
 
 ### Configuration File: `Config.h`
 
-All configurable parameters are in `Config.h`. Key settings:
+All configurable parameters are in `Config.h` (in the [firmware repo](https://github.com/desvandi/Firmware-code-gs_relaytimer) at `firmware/Config.h`). Key settings:
 
 #### WiFi (STA Mode)
 ```cpp
@@ -293,9 +298,11 @@ Boot complete. Ready.
 
 ## Google Apps Script (AI Insights) Setup
 
+> 📦 **Code.gs lives in**: [`code.gs/Code.gs`](https://github.com/desvandi/Firmware-code-gs_relaytimer/blob/main/code.gs/Code.gs) in the firmware repo.
+
 ### Deploy Code.gs
 1. Open https://script.google.com → **New Project**
-2. Delete default code, paste contents of `Code.gs`
+2. Delete default code, paste contents of [`Code.gs`](https://github.com/desvandi/Firmware-code-gs_relaytimer/blob/main/code.gs/Code.gs)
 3. **Set Gemini API key:**
    - Project Settings → Script Properties
    - Add: `GEMINI_API_KEY` = your key from https://aistudio.google.com/apikey
@@ -418,6 +425,10 @@ Remote-Relay/                         ← PWA (this repo, deployed to Vercel)
 ├── .env.example
 ├── src/
 │   ├── app/                          ← Next.js App Router
+│   │   ├── api/                      ← Mock API routes (dev/demo only; real calls hit ESP32)
+│   │   ├── page.tsx                  ← Login (REST + MQTT dual mode)
+│   │   ├── layout.tsx                ← Providers wrap
+│   │   └── globals.css               ← Tailwind 4 + custom styles
 │   ├── components/
 │   │   ├── providers/                ← Theme, Language, Query, Auth, MQTT
 │   │   ├── layout/                   ← AppShell, Sidebar, Header
@@ -430,50 +441,43 @@ Remote-Relay/                         ← PWA (this repo, deployed to Vercel)
 │   │   ├── energy/                   ← Energy Analytics + charts
 │   │   ├── ota/                      ← Firmware management
 │   │   └── settings/                 ← Timezone, password, backup, reset
+│   │   └── ui/                       ← shadcn/ui components
 │   ├── hooks/useApi.ts              ← Hybrid REST/MQTT React Query hooks
 │   └── lib/
 │       ├── types.ts                  ← API contract types
 │       ├── api.ts                    ← REST API client
+│       ├── apiResponse.ts            ← Server-side JSON envelope helpers
 │       ├── mqtt.ts                   ← MQTT client (WSS to HiveMQ)
+│       ├── mqttPublisher.ts          ← Internal publisher (private, not exported)
+│       ├── mqttTransaction.ts        ← ACK transaction layer (UUID, 5s timeout, schema validation)
+│       ├── mqttPending.ts            ← Pending commands map + synchronous cancel
 │       ├── aiInsights.ts             ← GAS insights fetcher
-│       ├── geofence.ts              ← Geofencing utility
+│       ├── geofence.ts               ← Geofencing utility
 │       ├── scheduleConflict.ts       ← Schedule overlap validator
-│       ├── energyHistory.ts          ← 24h rolling energy storage
-│       ├── mockStore.ts              ← In-memory simulator
+│       ├── energyHistory.ts          ← 24h rolling energy storage (localStorage)
+│       ├── mockStore.ts              ← In-memory simulator (dev/demo only)
+│       ├── auth.ts                   ← getSession / requireAuth / CSRF (graceful no-op when disabled)
+│       ├── jwt.ts                    ← HS256 sign/verify (server-side)
 │       ├── i18n.ts                   ← ID + EN translations
 │       └── format.ts                 ← Time/uptime/RSSI formatters
 └── public/
     ├── manifest.webmanifest
     └── icon-{192,512,512-maskable}.png
 
-firmware_v4/                          ← ESP32 firmware (separate download)
-├── firmware_v4.ino                   ← Main entry (setup + loop)
-├── Config.h                          ← ⚠️ Edit GAS_INSIGHTS_URL here
-├── Types.h                           ← Data structures
-├── Globals.h                         ← Global state declarations
-├── WifiManager.{h,cpp}               ← WiFi STA + Config Portal
-├── MqttClient.{h,cpp}                ← MQTT publish/subscribe + OTA
-├── PzemDriver.{h,cpp}                ← PZEM-004T v3.0 (Modbus-RTU)
-├── RtcDriver.{h,cpp}                 ← DS3231 RTC
-├── RelayDriver.{h,cpp}               ← 12 relay control
-├── PirDriver.{h,cpp}                 ← 4 PIR sensors
-├── ConfigStore.{h,cpp}               ← LittleFS persistence
-├── FileSystem.{h,cpp}                ← LittleFS wrapper
-├── RelayEngine.{h,cpp}               ← Priority: Manual > PIR > Schedule
-├── Scheduler.{h,cpp}                 ← Schedule evaluation
-├── AuthManager.{h,cpp}               ← JWT + CSRF + rate limiter
-├── OtaManager.{h,cpp}                ← OTA firmware update
-├── LogService.{h,cpp}                ← Activity + audit log
-├── Advisor.{h,cpp}                   ← GAS integration (POST logs hourly)
-├── HttpServer.{h,cpp}                ← REST API server (LAN mode)
-├── Common.h                          ← Shared web helpers
-└── *Handlers.h (12 files)           ← REST route handlers
-
-download/
-├── Code.gs                           ← Google Apps Script (deploy to GAS)
-├── firmware_v4_arduino.zip           ← Firmware package
-└── firmware-deployment-guide.pdf     ← Detailed setup guide
+Firmware-code-gs_relaytimer/          ← ESP32 firmware + GAS (separate repo)
+├── firmware/                         ← 53 files, flat layout for Arduino IDE
+│   ├── firmware_v4.ino               ← Main entry (setup + loop)
+│   ├── Config.h                      ← ⚠️ Edit GAS_INSIGHTS_URL + MQTT broker here
+│   ├── MqttClient.cpp                ← ACK + requestId dedup + TLS support
+│   ├── PzemDriver.cpp                ← PZEM-004T v3.0 self-contained Modbus-RTU
+│   ├── Advisor.cpp                   ← GAS integration (watchdog-safe HTTP)
+│   ├── AuthManager.cpp               ← JWT + CSRF + rate limiter
+│   └── ... (47 more files)
+└── code.gs/
+    └── Code.gs                       ← Google Apps Script (deploy to GAS)
 ```
+
+See the [firmware repo README](https://github.com/desvandi/Firmware-code-gs_relaytimer#readme) for the firmware file-by-file breakdown.
 
 ---
 
@@ -566,6 +570,33 @@ download/
 | Auth | JWT (HS256) + CSRF (REST) + Topic password (MQTT) |
 | Power Meter | PZEM-004T v3.0 (Modbus-RTU over UART) |
 | RTC | DS3231SN (I2C, CR1220 backup) |
+
+---
+
+## Changelog (PWA)
+
+### v4.0.2 — Auth graceful-degradation fix (latest)
+
+- **Fixed**: "Invalid JSON response (status 500)" when clicking LAN login button on Vercel.
+  - Root cause: `assertMockAuthConfigured()` threw an uncaught error in production (no `JWT_SECRET` / `DEMO_MODE`), causing Next.js to return 500 with HTML instead of JSON.
+  - Fix: Replaced throwing guard with non-throwing `isMockAuthEnabled()` boolean. All auth functions (`verifyCredentials`, `getJwtSecret`, `getSession`) now gracefully return `false` / empty / unauthenticated when mock auth is disabled — no throws, no 500s.
+- **`/api/login`**: Returns `403 JSON` with clear "LAN mode disabled" message instead of throwing.
+- **`/api/session`**: Returns `200 JSON {isAuthenticated:false}` instead of 500 (silent page-load check).
+- **LoginForm**: When LAN mode is disabled, hides the LAN login card and shows a notice card guiding the user to MQTT mode (with env var setup instructions for re-enabling demo mode).
+- **New env var**: `NEXT_PUBLIC_DEMO_MODE=true` (frontend-visible variant of `DEMO_MODE` — lets the browser detect demo mode and show the LAN login card).
+- **Build fix**: `tsconfig.json` now excludes `examples/`, `skills/`, `mini-services/`, `firmware_v4/`, `tool-results/`, `upload/`, `download/`, `Remote-Relay/` from type-checking (was breaking Vercel build with unrelated `socket.io-client` and `zai-sdk` type errors from those reference directories).
+
+### v4.0.1 — MQTT transaction layer hardening (8 audit rounds)
+
+- **MQTT transaction layer**: `sendCommandWithAck()` generates UUID `requestId`, waits for ESP32 ACK with 5s timeout, deep-validates ACK schema (`channelId` 1-12, `state` boolean, `source` enum, `modeAuto` boolean). Matches ACK by `requestId` from a `pendingCommands` Map.
+- **Subscribe-before-resolve**: connect promise resolves only after subscribe callback confirms granted QoS (validates `granted.length === 4` and `qos !== 128`).
+- **Settle-once pattern**: subsequent connection events don't re-trigger resolve/reject.
+- **Private publisher**: `publishCommand()` moved to `mqttPublisher.ts` (not exported from public API) — only accessible via `sendCommandWithAck()`.
+- **Synchronous cancel**: `cancelAllPendingCommands()` is synchronous (no async dynamic import) — safe to call from React unmount.
+- **Idempotent relay control**: All 10 relay mutations use `SET_STATE ON/OFF` (no TOGGLE). ESP32 deduplicates by `requestId` via ring buffer of 16.
+- **React Query cache update**: relay mutation updates the cache from ACK data (not optimistic update) for deterministic UI state.
+
+See the [firmware repo CHANGELOG](https://github.com/desvandi/Firmware-code-gs_relaytimer#security-audit-notes) for the matching ESP32-side hardening (8 audit rounds).
 
 ---
 
