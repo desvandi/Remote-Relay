@@ -243,8 +243,8 @@ Timer 12 Relay v4.0.0
 Build: Aug  7 2026 ...
 Cloud-Ready Architecture (modular)
 ========================================
-[WiFi] MQTT Password: K7M3P9XQ
-[WiFi] Device PIN: 123456
+[WiFi] MQTT Password: <DEVICE_SECRET>
+[WiFi] Device PIN: <DEVICE_PIN>
 ========================================
 WiFi: connecting to STA "YourWiFi"...
 WiFi STA connected! IP: 192.168.1.50, RSSI: -55 dBm
@@ -284,8 +284,8 @@ Boot complete. Ready.
 1. Open PWA URL (Vercel deployment)
 2. Scroll to **"Remote Mode (MQTT)"** card
 3. Enter:
-   - **Device ID (MAC):** from Serial Monitor (12 hex chars, e.g., `A4CF12345678`)
-   - **MQTT Password:** from Serial Monitor (8 chars, e.g., `K7M3P9XQ`)
+   - **Device ID (MAC):** from Serial Monitor (12 hex chars, e.g., `<DEVICE_MAC>`)
+   - **MQTT Password:** from Serial Monitor (8 chars, e.g., `<DEVICE_SECRET>`)
 4. Click **Connect via MQTT**
 5. Dashboard loads — control relays from anywhere
 
@@ -347,7 +347,8 @@ PWA (every 5 min) ← GET insights ← GAS (cached 1 hour)
 | Energy Analytics + Charts | ✅ | ✅ |
 | Power Alarms (5 thresholds) | ✅ | ✅ |
 | Geofencing (enter/leave) | ✅ | ✅ |
-| OTA Firmware Update | ✅ (upload) | ✅ (URL download) |
+| OTA Firmware Update | ✅ (upload, real) | ✅ (URL download, real via ESP32) |
+| OTA (PWA mock API) | DEMO (simulated) | DEMO (simulated) |
 | WiFi Config Portal | ✅ | ✅ |
 | MQTT Security (topic password) | — | ✅ |
 | Device Config (name, timezone) | ✅ | ✅ |
@@ -519,11 +520,32 @@ download/
 
 ## Security Notes
 
-- **MQTT topic password**: 8-char random alphanumeric, generated per device, stored in NVS
-- **Public broker**: HiveMQ public broker is unauthenticated. Topic password provides obscurity
-- **GAS Web App**: Deployed as "Anyone (anonymous)" — URL is unguessable
-- **JWT (REST mode)**: HS256 signed, 1-hour expiry, CSRF token required
-- **No hardcoded secrets**: All credentials generated at first boot, stored in NVS
+> ⚠️ **PRODUCTION SECURITY DISCLAIMER**
+>
+> This system uses **HiveMQ public broker** (anonymous, no TLS on ESP32 side, port 1883).
+> Device password is embedded in MQTT topic path as an obscurity measure.
+>
+> **This is NOT sufficient for production relay control of 220V AC loads.**
+>
+> For production deployment, you MUST:
+> 1. Deploy self-hosted MQTT broker (Mosquitto/EMQX) with TLS (port 8883)
+> 2. Enable broker authentication (username/password per device)
+> 3. Configure ACL per device (restrict publish/subscribe to own topics)
+> 4. Remove password from topic path (use `timer12/<deviceId>/command` instead)
+> 5. Set `MQTT_BROKER_HOST`, `MQTT_BROKER_PORT=8883`, `MQTT_BROKER_USERNAME`, `MQTT_BROKER_PASSWORD` in `Config.h`
+> 6. Update PWA `MQTT_BROKER_URL` to use `wss://` with authenticated broker
+>
+> The codebase already supports authenticated brokers — set the credentials and re-flash.
+
+### Current Security Measures (MVP / Demo)
+- **MQTT topic password**: 8-char random alphanumeric, generated per device, stored in NVS (obscurity, not authentication)
+- **MQTT TLS**: Supported in firmware (port 8883 → WiFiClientSecure). Default: plain TCP (port 1883)
+- **GAS Web App**: Deployed as "Anyone (anonymous)" — URL is unguessable. For production: add HMAC signature
+- **JWT (REST mode)**: HS256 signed, 1-hour expiry, CSRF token required. Secret from `process.env.JWT_SECRET` (hard fail if missing in production)
+- **No hardcoded secrets**: All credentials generated at first boot, stored in NVS. No `admin/admin123` in production (DEMO_MODE only)
+- **ACK transaction**: Every relay command waits for ESP32 ACK (5s timeout). UI only shows success after ESP32 confirms execution
+- **Idempotency**: PWA uses SET_STATE (ON/OFF) instead of TOGGLE. ESP32 deduplicates by requestId (ring buffer of 16)
+- **Data minimization**: GAS receives anonymous device ID (SHA-256 hash of MAC, truncated to 16 chars), not raw MAC
 - **WiFi Config Portal**: Open AP (no password) for easy onboarding. Closes automatically after WiFi saved.
 
 ---

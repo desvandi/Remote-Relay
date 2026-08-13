@@ -35,8 +35,10 @@ const DEMO_MODE = process.env.NODE_ENV === 'development' || process.env.DEMO_MOD
 
 // PRODUCTION GUARD: mock auth must NEVER work in production without explicit env vars
 if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET && !process.env.DEMO_MODE) {
-  // In production without JWT_SECRET, mock auth is disabled
-  // User must use MQTT mode (real ESP32) or set JWT_SECRET env var
+  throw new Error(
+    'FATAL: JWT_SECRET environment variable is required in production. ' +
+    'Set DEMO_MODE=true for demo deployment, or use MQTT mode (real ESP32).'
+  );
 }
 
 // Default credentials (demo only — DO NOT use in production)

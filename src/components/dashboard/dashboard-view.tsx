@@ -211,12 +211,13 @@ function RelayCard({ channel }: { channel: Channel }) {
   const sourceInfo = SOURCE_LABELS[channel.source];
 
   const onToggle = () => {
-    // Force manual mode + toggle
+    // Use SET_STATE (ON/OFF) instead of TOGGLE for idempotency
+    // This prevents double-toggle bug if command is retried
     mutation.mutate({
       channelId: channel.id,
-      action: 'toggle',
+      action: isOn ? 'off' : 'on',
       mode: 'manual',
-      manualState: !channel.manualState,
+      manualState: !isOn,
     });
   };
 
