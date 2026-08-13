@@ -31,6 +31,7 @@ const state: MqttState = {
 const statusCallbacks = new Set<StatusCallback>();
 const logCallbacks = new Set<LogCallback>();
 const onlineCallbacks = new Set<OnlineCallback>();
+const ackCallbacks = new Set<(ack: { requestId: string; success: boolean; message: string }) => void>();
 
 export function getMqttDeviceId(): string | null {
   if (state.deviceId) return state.deviceId;
@@ -98,11 +99,12 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
     client.on('connect', () => {
       console.log('[MQTT] Connected to broker');
       state.connected = true;
-      // Subscribe to status, log, and online topics
+      // Subscribe to status, log, online, and ack topics
       client.subscribe([
         `${baseTopic}/status`,
         `${baseTopic}/log`,
         `${baseTopic}/online`,
+        `${baseTopic}/ack`,
       ], { qos: 1 });
       onlineCallbacks.forEach((cb) => cb(true));
       resolve();
@@ -127,6 +129,14 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
       } else if (topic.endsWith('/online')) {
         const online = msg === '1';
         onlineCallbacks.forEach((cb) => cb(online));
+      } else if (topic.endsWith('/ack')) {
+        try {
+          const ack = JSON.parse(msg) as { requestId: string; success: boolean; message: string };
+          console.log('[MQTT] ACK received:', ack);
+          ackCallbacks.forEach((cb) => cb(ack));
+        } catch (e) {
+          console.error('[MQTT] Failed to parse ACK JSON:', e);
+        }
       }
     });
 
@@ -210,6 +220,11 @@ export function onLog(cb: LogCallback): () => void {
 export function onOnlineChange(cb: OnlineCallback): () => void {
   onlineCallbacks.add(cb);
   return () => onlineCallbacks.delete(cb);
+}
+
+export function onAck(cb: (ack: { requestId: string; success: boolean; message: string }) => void): () => void {
+  ackCallbacks.add(cb);
+  return () => ackCallbacks.delete(cb);
 }
 
 // ---------------------------------------------------------------------------

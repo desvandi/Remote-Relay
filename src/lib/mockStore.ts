@@ -549,12 +549,42 @@ export function exportConfig(): SystemConfig {
 
 export function importConfig(cfg: Partial<SystemConfig>): boolean {
   if (!G.state) return false;
-  if (cfg.deviceName) G.state.deviceName = cfg.deviceName;
-  if (cfg.timezone) G.state.timezone = cfg.timezone;
-  if (cfg.channels && Array.isArray(cfg.channels)) G.state.channels = cfg.channels;
-  if (cfg.schedules && Array.isArray(cfg.schedules)) G.state.schedules = cfg.schedules;
-  if (cfg.pirs && Array.isArray(cfg.pirs)) G.state.pirs = cfg.pirs;
-  appendLog('config_change', 'Configuration imported', null);
+
+  // Deep validation — treat as untrusted input
+  if (cfg.deviceName) {
+    if (typeof cfg.deviceName !== 'string' || cfg.deviceName.length < 1 || cfg.deviceName.length > 32) return false;
+    G.state.deviceName = cfg.deviceName;
+  }
+  if (cfg.timezone) {
+    if (typeof cfg.timezone !== 'string' || cfg.timezone.length > 40) return false;
+    G.state.timezone = cfg.timezone;
+  }
+  if (cfg.channels && Array.isArray(cfg.channels)) {
+    if (cfg.channels.length !== 12) return false;  // must have exactly 12 channels
+    // Validate each channel
+    for (const ch of cfg.channels) {
+      if (!ch || typeof ch.id !== 'number' || ch.id < 1 || ch.id > 12) return false;
+      if (typeof ch.name !== 'string' || ch.name.length > 20) return false;
+      if (typeof ch.modeAuto !== 'boolean') return false;
+    }
+    G.state.channels = cfg.channels;
+  }
+  if (cfg.schedules && Array.isArray(cfg.schedules)) {
+    // Validate schedules
+    for (const s of cfg.schedules) {
+      if (!s || typeof s.channelId !== 'number' || s.channelId < 1 || s.channelId > 12) return false;
+      if (typeof s.onTime !== 'string' || !/^\d{2}:\d{2}$/.test(s.onTime)) return false;
+      if (typeof s.offTime !== 'string' || !/^\d{2}:\d{2}$/.test(s.offTime)) return false;
+      if (typeof s.dayMask !== 'number' || s.dayMask < 0 || s.dayMask > 127) return false;
+      if (typeof s.enabled !== 'boolean') return false;
+    }
+    G.state.schedules = cfg.schedules;
+  }
+  if (cfg.pirs && Array.isArray(cfg.pirs)) {
+    if (cfg.pirs.length !== 4) return false;  // must have exactly 4 PIRs
+    G.state.pirs = cfg.pirs;
+  }
+  appendLog('config_change', 'Configuration imported (validated)', null);
   recomputeRelayStates();
   schedulePersist();
   return true;
