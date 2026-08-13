@@ -397,7 +397,7 @@ All responses: `{ "success": bool, "message": string, "data": T }`
 |--------|----------|---------|
 | POST | `/api/login` | JWT + CSRF cookies |
 | GET | `/api/status` | Full SystemStatus |
-| POST | `/api/relay` | Toggle/on/off/set_mode |
+| POST | `/api/relay` | Set relay state/mode (ON/OFF/set_mode) |
 | POST | `/api/schedule` | Upsert schedule |
 | POST | `/api/pir` | PIR config |
 | POST | `/api/time` | Set RTC |

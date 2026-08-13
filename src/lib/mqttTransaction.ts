@@ -1,16 +1,9 @@
 // =============================================================================
 // MQTT Command Transaction — send command, wait for ACK with timeout
 // =============================================================================
-import { publishCommand, onAck } from './mqtt';
+import { _publishCommand as publishCommand, onAck } from './mqtt';
+import { pendingCommands, type PendingCommand, type MqttAck } from './mqttPending';
 
-type PendingCommand = {
-  requestId: string;
-  resolve: (ack: { success: boolean; message: string; data?: { channelId?: number; state?: boolean; source?: string; modeAuto?: boolean } }) => void;
-  reject: (error: Error) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
-};
-
-const pendingCommands = new Map<string, PendingCommand>();
 const ACK_TIMEOUT_MS = 5000; // 5 seconds
 
 // Subscribe to ACK events — match requestId to pending commands
@@ -18,7 +11,6 @@ let ackSubscriptionInitialized = false;
 
 function generateRequestId(): string {
   // Use crypto.randomUUID() — no Math.random() fallback
-  // All modern browsers (2024+) support crypto.randomUUID()
   return crypto.randomUUID();
 }
 
@@ -26,7 +18,13 @@ function initAckSubscription() {
   if (ackSubscriptionInitialized) return;
   ackSubscriptionInitialized = true;
 
-  onAck((ack) => {
+  onAck((ack: MqttAck) => {
+    // Validate ACK schema — don't trust MQTT payload blindly
+    if (!ack || typeof ack.requestId !== 'string' || typeof ack.success !== 'boolean') {
+      console.error('[MQTT] Invalid ACK schema, ignoring:', ack);
+      return;
+    }
+
     const pending = pendingCommands.get(ack.requestId);
     if (pending) {
       clearTimeout(pending.timeoutId);
@@ -41,48 +39,33 @@ function initAckSubscription() {
 }
 
 /**
- * Cancel all pending commands — called on disconnect/logout/error.
- * Rejects all pending promises with 'Connection closed' error.
- */
-export function cancelAllPendingCommands(): void {
-  for (const [id, pending] of pendingCommands) {
-    clearTimeout(pending.timeoutId);
-    pending.reject(new Error('MQTT connection closed — command cancelled'));
-    pendingCommands.delete(id);
-  }
-}
-
-/**
  * Send a command to ESP32 via MQTT and wait for ACK.
  * Returns a Promise that:
  *   - resolves when ESP32 publishes ACK with matching requestId
  *   - rejects after 5 seconds if no ACK received (timeout)
  *   - rejects if ACK indicates failure
- *
- * This ensures UI only shows "success" after ESP32 actually executes the command.
+ *   - ACK may contain `data` with actual relay state for immediate UI update
  */
-export function sendCommandWithAck(command: Record<string, unknown>): Promise<{ success: boolean; message: string; data?: { channelId?: number; state?: boolean; source?: string; modeAuto?: boolean } }> {
+export function sendCommandWithAck(command: Record<string, unknown>): Promise<MqttAck> {
   initAckSubscription();
 
   return new Promise((resolve, reject) => {
-    // Generate UUID requestId — single source of truth
     const requestId = generateRequestId();
 
-    // Set up timeout
     const timeoutId = setTimeout(() => {
       pendingCommands.delete(requestId);
       reject(new Error('Command timeout — ESP32 did not respond in 5 seconds'));
     }, ACK_TIMEOUT_MS);
 
-    // Store pending command
-    pendingCommands.set(requestId, {
+    const pending: PendingCommand = {
       requestId,
       resolve,
       reject,
       timeoutId,
-    });
+    };
 
-    // Publish command with requestId (publishCommand does NOT generate its own)
+    pendingCommands.set(requestId, pending);
+
     const published = publishCommand({ ...command, requestId });
     if (!published) {
       clearTimeout(timeoutId);
@@ -92,9 +75,10 @@ export function sendCommandWithAck(command: Record<string, unknown>): Promise<{ 
   });
 }
 
-/**
- * Check if there are pending commands awaiting ACK
- */
 export function hasPendingCommands(): boolean {
   return pendingCommands.size > 0;
 }
+
+// Re-export cancelAllPendingCommands for convenience
+export { cancelAllPendingCommands } from './mqttPending';
+export type { MqttAck } from './mqttPending';

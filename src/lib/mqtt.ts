@@ -5,6 +5,10 @@
 
 import mqtt from 'mqtt';
 import type { SystemStatus, ActivityLog } from './types';
+import { cancelAllPendingCommands } from './mqttPending';
+
+// Re-export MqttAck type for consumers
+export type { MqttAck } from './mqttPending';
 
 // MQTT Broker URL — configurable via env var for production (self-hosted broker)
 // Default: HiveMQ public broker (free, no auth, for demo/MVP)
@@ -67,6 +71,9 @@ export function isMqttConnected(): boolean {
 
 export function connectMqtt(deviceId: string, password: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Cancel pending commands from previous connection SYNCHRONOUSLY
+    cancelAllPendingCommands();
+
     if (state.client) {
       state.client.end(true);
       state.client = null;
@@ -84,17 +91,10 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
       return;
     }
 
-    // Cancel any pending commands from previous connection
-    import('./mqttTransaction').then(({ cancelAllPendingCommands }) => {
-      cancelAllPendingCommands();
-    });
-
-    // Topic includes password for security: timer12/<mac>/<password>/<subtopic>
     const baseTopic = `timer12/${state.deviceId}/${state.password}`;
     const clientId = `pwa-${crypto.randomUUID()}`;
 
     console.log(`[MQTT] Connecting to ${MQTT_BROKER_URL} as ${clientId}...`);
-    console.log(`[MQTT] Device: ${state.deviceId}, topics: ${baseTopic}/{status,command,log,online,ack}`);
 
     const client = mqtt.connect(MQTT_BROKER_URL, {
       clientId,
@@ -108,30 +108,27 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
 
     state.client = client;
 
+    // Settle-once pattern: prevent multiple resolve/reject calls
+    let settled = false;
+    const resolveOnce = () => { if (!settled) { settled = true; resolve(); } };
+    const rejectOnce = (err: Error) => { if (!settled) { settled = true; reject(err); } };
+
     client.on('connect', () => {
       console.log('[MQTT] Connected to broker, subscribing...');
-      // CRITICAL: Wait for subscribe callback before resolving
-      // This prevents race condition where commands are sent before
-      // ack topic subscription is active
       client.subscribe(
-        [
-          `${baseTopic}/status`,
-          `${baseTopic}/log`,
-          `${baseTopic}/online`,
-          `${baseTopic}/ack`,
-        ],
+        [`${baseTopic}/status`, `${baseTopic}/log`, `${baseTopic}/online`, `${baseTopic}/ack`],
         { qos: 1 },
         (err, granted) => {
           if (err) {
             console.error('[MQTT] Subscribe error:', err);
             state.connected = false;
-            reject(new Error(`MQTT subscription failed: ${err.message}`));
+            rejectOnce(new Error(`MQTT subscription failed: ${err.message}`));
             return;
           }
           console.log('[MQTT] Subscriptions confirmed:', granted);
           state.connected = true;
           onlineCallbacks.forEach((cb) => cb(true));
-          resolve();
+          resolveOnce();
         }
       );
     });
@@ -168,8 +165,8 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
 
     client.on('error', (err: Error) => {
       console.error('[MQTT] Error:', err.message);
-      if (!state.connected) {
-        reject(err);
+      if (!settled) {
+        rejectOnce(err);
       }
     });
 
@@ -186,6 +183,9 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
 }
 
 export function disconnectMqtt() {
+  // Cancel all pending commands SYNCHRONOUSLY before closing client
+  cancelAllPendingCommands();
+
   if (state.client) {
     state.client.end(true);
     state.client = null;
@@ -193,17 +193,15 @@ export function disconnectMqtt() {
   state.connected = false;
   state.deviceId = null;
   state.password = null;
-  // Cancel all pending ACK transactions — prevents hanging promises
-  // Import lazily to avoid circular dependency
-  import('./mqttTransaction').then(({ cancelAllPendingCommands }) => {
-    cancelAllPendingCommands();
-  });
 }
 
 // ---------------------------------------------------------------------------
-// Publish a command to the ESP32 via MQTT
+// publishCommand is INTERNAL — use sendCommandWithAck() for all mutations.
+// mqttApi is kept for backward compatibility but should NOT be used directly.
+// All mutations go through mqttTransaction.ts (sendCommandWithAck).
 // ---------------------------------------------------------------------------
-export function publishCommand(command: Record<string, unknown>): boolean {
+/** @internal Use sendCommandWithAck() instead — exported only for mqttTransaction */
+export function _publishCommand(command: Record<string, unknown>): boolean {
   if (!state.client || !state.connected || !state.deviceId || !state.password) {
     console.warn('[MQTT] Not connected — cannot publish command');
     return false;
@@ -260,36 +258,37 @@ export function onAck(cb: (ack: { requestId: string; success: boolean; message: 
 // ---------------------------------------------------------------------------
 export const mqttApi = {
   // Relay: only SET_STATE (on/off/set_mode) — no TOGGLE for idempotency
+  // WARNING: These are fire-and-forget. Use sendCommandWithAck() for ACK-guaranteed delivery.
   relayOn: (channelId: number) =>
-    publishCommand({ type: 'relay', action: 'on', channelId }),
+    _publishCommand({ type: 'relay', action: 'on', channelId }),
   relayOff: (channelId: number) =>
-    publishCommand({ type: 'relay', action: 'off', channelId }),
+    _publishCommand({ type: 'relay', action: 'off', channelId }),
   relaySetMode: (channelId: number, mode: 'auto' | 'manual', manualState?: boolean) =>
-    publishCommand({ type: 'relay', action: 'set_mode', channelId, mode, manualState }),
+    _publishCommand({ type: 'relay', action: 'set_mode', channelId, mode, manualState }),
   scheduleUpsert: (sched: {
     channelId: number; onTime: string; offTime: string;
     dayMask: number; enabled: boolean; id?: number;
-  }) => publishCommand({ type: 'schedule', action: 'upsert', ...sched }),
+  }) => _publishCommand({ type: 'schedule', action: 'upsert', ...sched }),
   scheduleDelete: (id: number) =>
-    publishCommand({ type: 'schedule', action: 'delete', id }),
+    _publishCommand({ type: 'schedule', action: 'delete', id }),
   pirConfig: (id: number, opts: { enabled?: boolean; holdTime?: number }) =>
-    publishCommand({ type: 'pir', action: 'config', id, ...opts }),
+    _publishCommand({ type: 'pir', action: 'config', id, ...opts }),
   pirTest: (id: number) =>
-    publishCommand({ type: 'pir', action: 'test', id }),
+    _publishCommand({ type: 'pir', action: 'test', id }),
   channelRename: (channelId: number, name: string) =>
-    publishCommand({ type: 'channel', action: 'rename', channelId, name }),
+    _publishCommand({ type: 'channel', action: 'rename', channelId, name }),
   setTime: (datetime: string) =>
-    publishCommand({ type: 'time', action: 'set', datetime }),
+    _publishCommand({ type: 'time', action: 'set', datetime }),
   reboot: () =>
-    publishCommand({ type: 'system', action: 'reboot' }),
+    _publishCommand({ type: 'system', action: 'reboot' }),
   getStatus: () =>
-    publishCommand({ type: 'system', action: 'getStatus' }),
+    _publishCommand({ type: 'system', action: 'getStatus' }),
   resetEnergyStats: () =>
-    publishCommand({ type: 'system', action: 'resetEnergyStats' }),
+    _publishCommand({ type: 'system', action: 'resetEnergyStats' }),
   resetDailyStats: () =>
-    publishCommand({ type: 'system', action: 'resetDailyStats' }),
+    _publishCommand({ type: 'system', action: 'resetDailyStats' }),
   setDeviceConfig: (opts: { deviceName?: string; timezone?: string }) =>
-    publishCommand({ type: 'config', action: 'setDevice', ...opts }),
+    _publishCommand({ type: 'config', action: 'setDevice', ...opts }),
   otaUpdate: (url: string, version: string) =>
     publishOtaUpdate(url, version),
 };
