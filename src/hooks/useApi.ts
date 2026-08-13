@@ -145,9 +145,11 @@ export function useRelayMutation() {
     onSuccess: (data, vars) => {
       if (!isMqttMode) {
         qc.invalidateQueries({ queryKey: ['status'] });
-      } else if (data.ack?.data) {
+      } else if (data.ack && data.ack.success && data.ack.commandType === 'relay') {
         // MQTT mode: update status cache directly from ACK data
-        // This provides deterministic UI update without waiting for next status push
+        // R10B-2: ACK is now discriminated union — commandType === 'relay'
+        // narrows data to RelayAckData with required fields.
+        const relayData = data.ack.data;
         qc.setQueryData<{ channels: Array<{ id: number; state: boolean; source: string; modeAuto: boolean }> } | undefined>(
           ['status'],
           (old) => {
@@ -155,12 +157,12 @@ export function useRelayMutation() {
             return {
               ...old,
               channels: old.channels.map((ch) =>
-                ch.id === vars.channelId && data.ack?.data
+                ch.id === vars.channelId
                   ? {
                       ...ch,
-                      state: data.ack.data.state ?? ch.state,
-                      source: (data.ack.data.source as RelaySource) ?? ch.source,
-                      modeAuto: data.ack.data.modeAuto ?? ch.modeAuto,
+                      state: relayData.state,
+                      source: relayData.source as RelaySource,
+                      modeAuto: relayData.modeAuto,
                     }
                   : ch
               ),

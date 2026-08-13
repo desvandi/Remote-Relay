@@ -7,7 +7,10 @@ import mqtt from 'mqtt';
 import type { SystemStatus, ActivityLog } from './types';
 import { cancelAllPendingCommands } from './mqttPending';
 import type { MqttAck } from './mqttPending';
-import { setPublisherClient } from './mqttPublisher';
+// R10B-3: setPublisherClient is now exported from mqttTransaction (publisher
+// logic inlined there). Previous mqttPublisher.ts module was deleted — there
+// is no longer a separate module to import publishCommand from.
+import { setPublisherClient } from './mqttTransaction';
 
 // Re-export MqttAck type for consumers
 export type { MqttAck } from './mqttPending';
@@ -220,9 +223,10 @@ export function disconnectMqtt() {
 }
 
 // ---------------------------------------------------------------------------
-// Publisher is in mqttPublisher.ts (internal module).
+// R10B-3: Publisher is INLINED in mqttTransaction.ts (no separate module).
 // mqtt.ts injects client+credentials via setPublisherClient() during connect/disconnect.
-// No raw publish function is exported from this module.
+// No raw publish function is exported from anywhere — all publishing goes
+// through sendCommandWithAck() which enforces the ACK transaction pattern.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
