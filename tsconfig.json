@@ -37,6 +37,14 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "examples",
+    "mini-services",
+    "firmware_v4",
+    "tool-results",
+    "skills",
+    "upload",
+    "download",
+    "Remote-Relay"
   ]
 }

@@ -30,20 +30,23 @@ const DATA_DIR = process.env.NODE_ENV === 'production'
 const STATE_FILE = path.join(DATA_DIR, 'mock-state.json');
 const LOG_FILE = path.join(DATA_DIR, 'mock-logs.json');
 
-// Demo mode flag — when false, mock API routes return 403 (disabled)
-const DEMO_MODE = process.env.NODE_ENV === 'development' || process.env.DEMO_MODE === 'true';
+// Demo mode flag — when false, mock API routes return graceful JSON errors (403)
+// instead of attempting auth.
+// Checks both DEMO_MODE and NEXT_PUBLIC_DEMO_MODE so users only need to set
+// one var (NEXT_PUBLIC_* is exposed to the browser, regular DEMO_MODE is not).
+const DEMO_MODE = process.env.NODE_ENV === 'development'
+  || process.env.DEMO_MODE === 'true'
+  || process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 
-// PRODUCTION GUARD: mock auth must NEVER work in production without explicit env vars
-// Note: This check runs at runtime (when mock API routes are called), NOT at build time.
-// Vercel build runs in production mode — throwing at module load would break the build.
-// If user only uses MQTT mode (no mock API), this code is never reached at runtime.
-function assertMockAuthConfigured(): void {
-  if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET && !process.env.DEMO_MODE) {
-    throw new Error(
-      'FATAL: Mock API auth requires JWT_SECRET or DEMO_MODE=true in production. ' +
-      'If using MQTT mode only (real ESP32), mock API routes are not needed.'
-    );
-  }
+// PRODUCTION GUARD (non-throwing):
+// Mock auth is "enabled" only when (a) dev mode, OR (b) DEMO_MODE=true, OR
+// (c) JWT_SECRET + MOCK_USER + MOCK_PASSWORD are all explicitly set.
+// When disabled, verifyCredentials() returns false and getJwtSecret() returns
+// empty string — no throws, no 500s. API routes use this to short-circuit
+// with a graceful JSON 403 response.
+export function isMockAuthEnabled(): boolean {
+  return DEMO_MODE
+    || Boolean(process.env.JWT_SECRET && process.env.MOCK_USER && process.env.MOCK_PASSWORD);
 }
 
 // Default credentials (demo only — DO NOT use in production)
@@ -51,6 +54,7 @@ function assertMockAuthConfigured(): void {
 // MOCK_USER + MOCK_PASSWORD env vars, or use real ESP32 via MQTT
 const DEFAULT_USER = process.env.MOCK_USER || (DEMO_MODE ? 'admin' : '');
 const DEFAULT_PASSWORD_HASH = process.env.MOCK_PASSWORD || (DEMO_MODE ? 'admin123' : '');
+// Empty string when disabled → verifyJwt returns null naturally, no throw.
 const JWT_SECRET = process.env.JWT_SECRET || (DEMO_MODE ? 'timer12-demo-only-secret' : '');
 
 const NUM_CHANNELS = 12;
@@ -396,14 +400,15 @@ export function appendLogExternal(type: LogType, message: string, channelId: num
 }
 
 // ---------- Auth ----------
+// Returns false when mock auth is disabled (no throw — caller decides response).
 export function verifyCredentials(username: string, password: string): boolean {
-  assertMockAuthConfigured(); // Runtime guard — only throws when mock API is actually called
-  if (!G.state) return false;
+  if (!isMockAuthEnabled() || !G.state) return false;
   return G.state.username === username && G.state.passwordHash === password;
 }
 
+// Returns empty string when mock auth is disabled. verifyJwt() with empty
+// secret naturally returns null — getSession() returns unauthenticated.
 export function getJwtSecret(): string {
-  assertMockAuthConfigured(); // Runtime guard — only throws when mock API is actually called
   return JWT_SECRET;
 }
 

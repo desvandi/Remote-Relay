@@ -8,10 +8,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Lock, User, Zap, Wifi, ShieldCheck, Cpu, Radio } from 'lucide-react';
+import { Loader2, Lock, User, Zap, Wifi, ShieldCheck, Cpu, Radio, AlertCircle } from 'lucide-react';
 import { LanguageSwitcher } from '@/components/layout/language-switcher';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { toast } from 'sonner';
+import { API_BASE_URL } from '@/lib/api';
+
+// LAN mode is available when:
+//   (a) NEXT_PUBLIC_API_BASE_URL is set (PWA calls real ESP32 via Cloudflare Tunnel), OR
+//   (b) NEXT_PUBLIC_DEMO_MODE === 'true' (mock API enabled)
+// Otherwise (production, MQTT-only deployment), the LAN login form is hidden
+// and the user is guided to the MQTT card below.
+const LAN_MODE_AVAILABLE = Boolean(API_BASE_URL) || process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 
 export function LoginForm() {
   const { login } = useAuth();
@@ -107,70 +115,103 @@ export function LoginForm() {
             </span>
           </div>
 
-          {/* Local Login Card (REST/Mock mode) */}
-          <Card className="border-border/50 shadow-xl backdrop-blur-sm">
-            <CardHeader className="space-y-1">
-              <CardTitle className="text-xl">{t('login.title')}</CardTitle>
-              <CardDescription>{t('login.subtitle')} — Local / LAN mode</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={onSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="username">{t('login.username')}</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="username"
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      className="pl-9"
-                      autoComplete="username"
-                      required
-                      disabled={loading}
-                    />
+          {/* Local Login Card (REST/Mock mode) — hidden in production MQTT-only deployments */}
+          {LAN_MODE_AVAILABLE ? (
+            <Card className="border-border/50 shadow-xl backdrop-blur-sm">
+              <CardHeader className="space-y-1">
+                <CardTitle className="text-xl">{t('login.title')}</CardTitle>
+                <CardDescription>{t('login.subtitle')} — Local / LAN mode</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={onSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="username">{t('login.username')}</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        id="username"
+                        type="text"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        className="pl-9"
+                        autoComplete="username"
+                        required
+                        disabled={loading}
+                      />
+                    </div>
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">{t('login.password')}</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="password"
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="pl-9"
-                      autoComplete="current-password"
-                      required
-                      disabled={loading}
-                    />
+                  <div className="space-y-2">
+                    <Label htmlFor="password">{t('login.password')}</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        id="password"
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="pl-9"
+                        autoComplete="current-password"
+                        required
+                        disabled={loading}
+                      />
+                    </div>
                   </div>
-                </div>
 
-                {error && (
-                  <div className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
-                    {error}
-                  </div>
-                )}
-
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      {t('common.loading')}
-                    </>
-                  ) : (
-                    t('login.submit')
+                  {error && (
+                    <div className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+                      {error}
+                    </div>
                   )}
-                </Button>
 
-                <p className="text-xs text-center text-muted-foreground">
-                  {t('login.demo_creds')}
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        {t('common.loading')}
+                      </>
+                    ) : (
+                      t('login.submit')
+                    )}
+                  </Button>
+
+                  <p className="text-xs text-center text-muted-foreground">
+                    {t('login.demo_creds')}
+                  </p>
+                </form>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-border/50 shadow-xl backdrop-blur-sm">
+              <CardHeader className="space-y-1">
+                <CardTitle className="text-xl flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-muted-foreground" />
+                  Local / LAN mode disabled
+                </CardTitle>
+                <CardDescription>
+                  This deployment is configured for MQTT remote mode only.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  To control your ESP32, use the <strong>Remote Mode (MQTT)</strong> card below —
+                  enter the Device ID (MAC) and MQTT password from the Serial Monitor.
                 </p>
-              </form>
-            </CardContent>
-          </Card>
+                <p className="text-xs">
+                  To enable LAN mode instead, set one of these in Vercel env vars:
+                </p>
+                <ul className="text-xs space-y-1 pl-4 list-disc">
+                  <li>
+                    <code className="font-mono bg-muted px-1 py-0.5 rounded">NEXT_PUBLIC_API_BASE_URL</code>
+                    {' '}— point to your Cloudflare Tunnel URL (real ESP32 REST API)
+                  </li>
+                  <li>
+                    <code className="font-mono bg-muted px-1 py-0.5 rounded">NEXT_PUBLIC_DEMO_MODE=true</code>
+                    {' '}— enable mock API with demo credentials (admin/admin123)
+                  </li>
+                </ul>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Divider */}
           <div className="flex items-center gap-3">

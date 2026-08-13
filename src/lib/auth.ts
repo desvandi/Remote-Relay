@@ -1,10 +1,13 @@
 // =============================================================================
 // Server-side auth helpers (mock API)
 // =============================================================================
+// All functions here gracefully no-op (return unauthenticated / false) when
+// mock auth is disabled in production. They never throw — callers receive a
+// clean 401 that the frontend can handle as "not logged in".
 
 import { cookies } from 'next/headers';
 import { verifyJwt, generateRandomToken } from '@/lib/jwt';
-import { getJwtSecret } from '@/lib/mockStore';
+import { getJwtSecret, isMockAuthEnabled } from '@/lib/mockStore';
 
 export const JWT_COOKIE = 'timer12_jwt';
 export const CSRF_COOKIE = 'timer12_csrf';
@@ -17,11 +20,18 @@ export type AuthResult = {
 };
 
 export async function getSession(): Promise<AuthResult> {
-  
+  // Short-circuit when mock auth is disabled — avoids calling verifyJwt with
+  // an empty secret (which would return null anyway, but this is faster and
+  // more explicit).
+  if (!isMockAuthEnabled()) {
+    return { authenticated: false, username: null, expiresAt: null };
+  }
   const cookieStore = await cookies();
   const token = cookieStore.get(JWT_COOKIE)?.value;
   if (!token) return { authenticated: false, username: null, expiresAt: null };
-  const payload = verifyJwt(token, getJwtSecret());
+  const secret = getJwtSecret();
+  if (!secret) return { authenticated: false, username: null, expiresAt: null };
+  const payload = verifyJwt(token, secret);
   if (!payload) return { authenticated: false, username: null, expiresAt: null };
   return {
     authenticated: true,
@@ -39,8 +49,11 @@ export async function requireAuth(): Promise<{ ok: true; username: string } | { 
 }
 
 export async function createSession(username: string) {
-  
-  const token = signSession(username, SESSION_TTL_SECONDS);
+  const secret = getJwtSecret();
+  if (!secret) {
+    throw new Error('Cannot create session: mock auth is disabled (no JWT_SECRET / DEMO_MODE).');
+  }
+  const token = signSession(username, SESSION_TTL_SECONDS, secret);
   const csrfToken = generateRandomToken(32);
   const cookieStore = await cookies();
   cookieStore.set(JWT_COOKIE, token, {
@@ -67,6 +80,7 @@ export async function destroySession() {
 }
 
 export async function verifyCsrfToken(req: Request): Promise<boolean> {
+  if (!isMockAuthEnabled()) return false;
   const cookieStore = await cookies();
   const cookieToken = cookieStore.get(CSRF_COOKIE)?.value;
   if (!cookieToken) return false;
@@ -82,6 +96,6 @@ export async function verifyCsrfToken(req: Request): Promise<boolean> {
 }
 
 import { signJwt } from '@/lib/jwt';
-function signSession(username: string, ttlSeconds: number) {
-  return signJwt({ sub: username }, getJwtSecret(), ttlSeconds);
+function signSession(username: string, ttlSeconds: number, secret: string) {
+  return signJwt({ sub: username }, secret, ttlSeconds);
 }

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { getStore, verifyCredentials } from '@/lib/mockStore';
+import { getStore, verifyCredentials, isMockAuthEnabled } from '@/lib/mockStore';
 import { createSession } from '@/lib/auth';
 import { ok, fail, unauthorized } from '@/lib/apiResponse';
 
@@ -12,6 +12,18 @@ const MAX_ATTEMPTS = 5;
 const BLOCK_MS = 60_000;
 
 export async function POST(req: NextRequest) {
+  // Short-circuit: if mock auth is disabled in production (no DEMO_MODE, no
+  // JWT_SECRET), return a graceful JSON 403 instead of attempting credential
+  // check (which would return false and confuse the user with "Invalid
+  // username or password"). The frontend uses this message to guide the user
+  // to MQTT mode.
+  if (!isMockAuthEnabled()) {
+    return fail(
+      'LAN mode (mock API) is disabled in production. Use MQTT mode below to connect to your ESP32, or set DEMO_MODE=true in Vercel env vars to enable the demo.',
+      403
+    );
+  }
+
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
   const entry = rateMap.get(ip);
   const now = Date.now();
