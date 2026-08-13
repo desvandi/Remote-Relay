@@ -336,7 +336,7 @@ PWA (every 5 min) ← GET insights ← GAS (cached 1 hour)
 
 | Feature | LAN (REST) | Remote (MQTT) |
 |---------|:----------:|:--------------:|
-| 12 Relay Control (toggle, mode) | ✅ | ✅ |
+| 12 Relay Control (ON/OFF, mode) | ✅ | ✅ |
 | Channel Rename (persistent) | ✅ | ✅ |
 | Weekly Scheduler (max 4/channel) | ✅ | ✅ |
 | Schedule Conflict Validation | ✅ | ✅ |
@@ -374,7 +374,7 @@ timer12/<MAC>/<PASSWORD>/ota       ← PWA publishes OTA update commands
 ### Command Types (PWA → ESP32)
 | Type | Actions | Description |
 |------|---------|-------------|
-| `relay` | toggle, on, off, set_mode | Relay control |
+| `relay` | on, off, set_mode | Relay control (SET_STATE only, no TOGGLE for idempotency) |
 | `schedule` | upsert, delete | Schedule management |
 | `pir` | config, test | PIR configuration |
 | `channel` | rename | Channel rename (persistent) |

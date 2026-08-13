@@ -84,12 +84,17 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
       return;
     }
 
+    // Cancel any pending commands from previous connection
+    import('./mqttTransaction').then(({ cancelAllPendingCommands }) => {
+      cancelAllPendingCommands();
+    });
+
     // Topic includes password for security: timer12/<mac>/<password>/<subtopic>
     const baseTopic = `timer12/${state.deviceId}/${state.password}`;
-    const clientId = `pwa-${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2, 10)}`;
+    const clientId = `pwa-${crypto.randomUUID()}`;
 
     console.log(`[MQTT] Connecting to ${MQTT_BROKER_URL} as ${clientId}...`);
-    console.log(`[MQTT] Device: ${state.deviceId}, topics: ${baseTopic}/{status,command,log,online}`);
+    console.log(`[MQTT] Device: ${state.deviceId}, topics: ${baseTopic}/{status,command,log,online,ack}`);
 
     const client = mqtt.connect(MQTT_BROKER_URL, {
       clientId,
@@ -97,7 +102,6 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
       reconnectPeriod: 5000,
       connectTimeout: 10000,
       clean: true,
-      // Include username/password if configured (for self-hosted authenticated broker)
       ...(MQTT_BROKER_USERNAME ? { username: MQTT_BROKER_USERNAME } : {}),
       ...(MQTT_BROKER_PASSWORD ? { password: MQTT_BROKER_PASSWORD } : {}),
     });
@@ -105,17 +109,31 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
     state.client = client;
 
     client.on('connect', () => {
-      console.log('[MQTT] Connected to broker');
-      state.connected = true;
-      // Subscribe to status, log, online, and ack topics
-      client.subscribe([
-        `${baseTopic}/status`,
-        `${baseTopic}/log`,
-        `${baseTopic}/online`,
-        `${baseTopic}/ack`,
-      ], { qos: 1 });
-      onlineCallbacks.forEach((cb) => cb(true));
-      resolve();
+      console.log('[MQTT] Connected to broker, subscribing...');
+      // CRITICAL: Wait for subscribe callback before resolving
+      // This prevents race condition where commands are sent before
+      // ack topic subscription is active
+      client.subscribe(
+        [
+          `${baseTopic}/status`,
+          `${baseTopic}/log`,
+          `${baseTopic}/online`,
+          `${baseTopic}/ack`,
+        ],
+        { qos: 1 },
+        (err, granted) => {
+          if (err) {
+            console.error('[MQTT] Subscribe error:', err);
+            state.connected = false;
+            reject(new Error(`MQTT subscription failed: ${err.message}`));
+            return;
+          }
+          console.log('[MQTT] Subscriptions confirmed:', granted);
+          state.connected = true;
+          onlineCallbacks.forEach((cb) => cb(true));
+          resolve();
+        }
+      );
     });
 
     client.on('message', (topic: string, payload: Buffer) => {

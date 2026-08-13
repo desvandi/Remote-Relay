@@ -9,7 +9,7 @@ import { useMqttStatus, useMqttLogs } from '@/components/providers/mqtt-provider
 import { toast } from 'sonner';
 import { useLanguage } from '@/components/providers/language-provider';
 import { useEffect } from 'react';
-import type { RelayMutation, Schedule, SystemConfig } from '@/lib/types';
+import type { RelayMutation, Schedule, SystemConfig, RelaySource } from '@/lib/types';
 
 // ---------- Status (hybrid REST/MQTT) ----------
 export function useStatus() {
@@ -131,8 +131,6 @@ export function useRelayMutation() {
   return useMutation({
     mutationFn: async (mutation: RelayMutation) => {
       if (isMqttMode) {
-        // MQTT: send command and WAIT for ACK from ESP32 (not just publish)
-        // This ensures ESP32 actually received + executed the command
         const ack = await sendCommandWithAck({
           type: 'relay',
           action: mutation.action,
@@ -140,13 +138,38 @@ export function useRelayMutation() {
           mode: mutation.mode,
           manualState: mutation.manualState,
         });
-        return { channel: null, ack };
+        return { channel: null, ack } as const;
       }
-      return api.relay(mutation);
+      const channel = await api.relay(mutation);
+      return { channel, ack: undefined } as const;
     },
-    onSuccess: (_data, vars) => {
-      if (!isMqttMode) qc.invalidateQueries({ queryKey: ['status'] });
-      if (vars.action === 'toggle' || vars.action === 'on' || vars.action === 'off') {
+    onSuccess: (data, vars) => {
+      if (!isMqttMode) {
+        qc.invalidateQueries({ queryKey: ['status'] });
+      } else if (data.ack?.data) {
+        // MQTT mode: update status cache directly from ACK data
+        // This provides deterministic UI update without waiting for next status push
+        qc.setQueryData<{ channels: Array<{ id: number; state: boolean; source: string; modeAuto: boolean }> } | undefined>(
+          ['status'],
+          (old) => {
+            if (!old?.channels) return old;
+            return {
+              ...old,
+              channels: old.channels.map((ch) =>
+                ch.id === vars.channelId && data.ack?.data
+                  ? {
+                      ...ch,
+                      state: data.ack.data.state ?? ch.state,
+                      source: (data.ack.data.source as RelaySource) ?? ch.source,
+                      modeAuto: data.ack.data.modeAuto ?? ch.modeAuto,
+                    }
+                  : ch
+              ),
+            };
+          }
+        );
+      }
+      if (vars.action === 'on' || vars.action === 'off') {
         toast.success(vars.action === 'off' ? t('toast.relay_off') : t('toast.relay_on'));
       } else {
         toast.success(t('toast.saved'));

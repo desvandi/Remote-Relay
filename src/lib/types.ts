@@ -217,7 +217,7 @@ export type AiInsight = {
 // ---------- RELAY MUTATION ----------
 export type RelayMutation = {
   channelId: number;
-  action: 'toggle' | 'on' | 'off' | 'set_mode';
+  action: 'on' | 'off' | 'set_mode';
   mode?: 'auto' | 'manual';
   manualState?: boolean;
 };

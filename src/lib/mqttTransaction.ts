@@ -5,7 +5,7 @@ import { publishCommand, onAck } from './mqtt';
 
 type PendingCommand = {
   requestId: string;
-  resolve: (ack: { success: boolean; message: string }) => void;
+  resolve: (ack: { success: boolean; message: string; data?: { channelId?: number; state?: boolean; source?: string; modeAuto?: boolean } }) => void;
   reject: (error: Error) => void;
   timeoutId: ReturnType<typeof setTimeout>;
 };
@@ -61,7 +61,7 @@ export function cancelAllPendingCommands(): void {
  *
  * This ensures UI only shows "success" after ESP32 actually executes the command.
  */
-export function sendCommandWithAck(command: Record<string, unknown>): Promise<{ success: boolean; message: string }> {
+export function sendCommandWithAck(command: Record<string, unknown>): Promise<{ success: boolean; message: string; data?: { channelId?: number; state?: boolean; source?: string; modeAuto?: boolean } }> {
   initAckSubscription();
 
   return new Promise((resolve, reject) => {
