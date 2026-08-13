@@ -6,6 +6,7 @@
 import mqtt from 'mqtt';
 import type { SystemStatus, ActivityLog } from './types';
 import { cancelAllPendingCommands } from './mqttPending';
+import type { MqttAck } from './mqttPending';
 
 // Re-export MqttAck type for consumers
 export type { MqttAck } from './mqttPending';
@@ -40,7 +41,7 @@ const state: MqttState = {
 const statusCallbacks = new Set<StatusCallback>();
 const logCallbacks = new Set<LogCallback>();
 const onlineCallbacks = new Set<OnlineCallback>();
-const ackCallbacks = new Set<(ack: { requestId: string; success: boolean; message: string }) => void>();
+const ackCallbacks = new Set<(ack: MqttAck) => void>();
 
 export function getMqttDeviceId(): string | null {
   if (state.deviceId) return state.deviceId;
@@ -125,6 +126,14 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
             rejectOnce(new Error(`MQTT subscription failed: ${err.message}`));
             return;
           }
+          // Validate all subscriptions were granted (QoS 128 = denied by broker)
+          const denied = granted?.filter((g: { qos: number; topic: string }) => g.qos === 128);
+          if (denied && denied.length > 0) {
+            console.error('[MQTT] Subscriptions denied:', denied);
+            state.connected = false;
+            rejectOnce(new Error(`MQTT subscriptions denied: ${denied.map((d: { topic: string }) => d.topic).join(', ')}`));
+            return;
+          }
           console.log('[MQTT] Subscriptions confirmed:', granted);
           state.connected = true;
           onlineCallbacks.forEach((cb) => cb(true));
@@ -196,18 +205,14 @@ export function disconnectMqtt() {
 }
 
 // ---------------------------------------------------------------------------
-// publishCommand is INTERNAL — use sendCommandWithAck() for all mutations.
-// mqttApi is kept for backward compatibility but should NOT be used directly.
-// All mutations go through mqttTransaction.ts (sendCommandWithAck).
+// Raw publisher — NOT exported. Only accessible via sendCommandWithAck().
+// This prevents developers from accidentally using fire-and-forget publish.
 // ---------------------------------------------------------------------------
-/** @internal Use sendCommandWithAck() instead — exported only for mqttTransaction */
-export function _publishCommand(command: Record<string, unknown>): boolean {
+function publishCommand(command: Record<string, unknown>): boolean {
   if (!state.client || !state.connected || !state.deviceId || !state.password) {
     console.warn('[MQTT] Not connected — cannot publish command');
     return false;
   }
-  // Do NOT generate requestId here — caller (sendCommandWithAck) provides it
-  // This prevents double-requestId bug
   const topic = `timer12/${state.deviceId}/${state.password}/command`;
   const payload = JSON.stringify(command);
   const result = state.client.publish(topic, payload, { qos: 1 });
@@ -218,8 +223,8 @@ export function _publishCommand(command: Record<string, unknown>): boolean {
   return true;
 }
 
-// Publish OTA update command via MQTT
-export function publishOtaUpdate(url: string, version: string): boolean {
+// Publish OTA update command via MQTT — also internal, use sendCommandWithAck
+function publishOtaUpdate(url: string, version: string): boolean {
   if (!state.client || !state.connected || !state.deviceId || !state.password) {
     console.warn('[MQTT] Not connected — cannot publish OTA');
     return false;
@@ -229,6 +234,13 @@ export function publishOtaUpdate(url: string, version: string): boolean {
   state.client.publish(topic, payload, { qos: 1 });
   return true;
 }
+
+// Expose internal publishers ONLY to mqttTransaction.ts via a controlled export
+// This is the ONLY way to access publishCommand — not via public API
+export const _internal = {
+  publishCommand,
+  publishOtaUpdate,
+};
 
 // ---------------------------------------------------------------------------
 // Subscribe to status updates (real-time push from ESP32)
@@ -248,47 +260,10 @@ export function onOnlineChange(cb: OnlineCallback): () => void {
   return () => onlineCallbacks.delete(cb);
 }
 
-export function onAck(cb: (ack: { requestId: string; success: boolean; message: string }) => void): () => void {
+export function onAck(cb: (ack: MqttAck) => void): () => void {
   ackCallbacks.add(cb);
   return () => ackCallbacks.delete(cb);
 }
 
-// ---------------------------------------------------------------------------
-// Convenience command publishers (mirror REST API endpoints)
-// ---------------------------------------------------------------------------
-export const mqttApi = {
-  // Relay: only SET_STATE (on/off/set_mode) — no TOGGLE for idempotency
-  // WARNING: These are fire-and-forget. Use sendCommandWithAck() for ACK-guaranteed delivery.
-  relayOn: (channelId: number) =>
-    _publishCommand({ type: 'relay', action: 'on', channelId }),
-  relayOff: (channelId: number) =>
-    _publishCommand({ type: 'relay', action: 'off', channelId }),
-  relaySetMode: (channelId: number, mode: 'auto' | 'manual', manualState?: boolean) =>
-    _publishCommand({ type: 'relay', action: 'set_mode', channelId, mode, manualState }),
-  scheduleUpsert: (sched: {
-    channelId: number; onTime: string; offTime: string;
-    dayMask: number; enabled: boolean; id?: number;
-  }) => _publishCommand({ type: 'schedule', action: 'upsert', ...sched }),
-  scheduleDelete: (id: number) =>
-    _publishCommand({ type: 'schedule', action: 'delete', id }),
-  pirConfig: (id: number, opts: { enabled?: boolean; holdTime?: number }) =>
-    _publishCommand({ type: 'pir', action: 'config', id, ...opts }),
-  pirTest: (id: number) =>
-    _publishCommand({ type: 'pir', action: 'test', id }),
-  channelRename: (channelId: number, name: string) =>
-    _publishCommand({ type: 'channel', action: 'rename', channelId, name }),
-  setTime: (datetime: string) =>
-    _publishCommand({ type: 'time', action: 'set', datetime }),
-  reboot: () =>
-    _publishCommand({ type: 'system', action: 'reboot' }),
-  getStatus: () =>
-    _publishCommand({ type: 'system', action: 'getStatus' }),
-  resetEnergyStats: () =>
-    _publishCommand({ type: 'system', action: 'resetEnergyStats' }),
-  resetDailyStats: () =>
-    _publishCommand({ type: 'system', action: 'resetDailyStats' }),
-  setDeviceConfig: (opts: { deviceName?: string; timezone?: string }) =>
-    _publishCommand({ type: 'config', action: 'setDevice', ...opts }),
-  otaUpdate: (url: string, version: string) =>
-    publishOtaUpdate(url, version),
-};
+// mqttApi has been REMOVED — all mutations must use sendCommandWithAck().
+// This prevents fire-and-forget publish being mistaken for command success.

@@ -2,7 +2,6 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { mqttApi } from '@/lib/mqtt';
 import { sendCommandWithAck } from '@/lib/mqttTransaction';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useMqttStatus, useMqttLogs } from '@/components/providers/mqtt-provider';
@@ -36,7 +35,7 @@ export function useStatus() {
     return {
       data: mqttStatus ?? undefined,
       isLoading: !mqttStatus,
-      refetch: async () => { mqttApi.getStatus(); },
+      refetch: async () => { sendCommandWithAck({ type: 'system', action: 'getStatus' }).catch(() => {}); },
     };
   }
   return restQuery;

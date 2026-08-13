@@ -1,7 +1,7 @@
 // =============================================================================
 // MQTT Command Transaction — send command, wait for ACK with timeout
 // =============================================================================
-import { _publishCommand as publishCommand, onAck } from './mqtt';
+import { _internal, onAck } from './mqtt';
 import { pendingCommands, type PendingCommand, type MqttAck } from './mqttPending';
 
 const ACK_TIMEOUT_MS = 5000; // 5 seconds
@@ -23,6 +23,34 @@ function initAckSubscription() {
     if (!ack || typeof ack.requestId !== 'string' || typeof ack.success !== 'boolean') {
       console.error('[MQTT] Invalid ACK schema, ignoring:', ack);
       return;
+    }
+    if (typeof ack.message !== 'string') {
+      console.error('[MQTT] Invalid ACK message type, ignoring:', ack);
+      return;
+    }
+
+    // Deep-validate relay ACK data if present
+    if (ack.data) {
+      const d = ack.data;
+      if (d.channelId !== undefined) {
+        if (typeof d.channelId !== 'number' || !Number.isInteger(d.channelId) ||
+            d.channelId < 1 || d.channelId > 12) {
+          console.error('[MQTT] Invalid ACK channelId, ignoring:', d.channelId);
+          return;
+        }
+      }
+      if (d.state !== undefined && typeof d.state !== 'boolean') {
+        console.error('[MQTT] Invalid ACK state type, ignoring:', d.state);
+        return;
+      }
+      if (d.source !== undefined && !['manual', 'schedule', 'pir', 'off'].includes(d.source)) {
+        console.error('[MQTT] Invalid ACK source, ignoring:', d.source);
+        return;
+      }
+      if (d.modeAuto !== undefined && typeof d.modeAuto !== 'boolean') {
+        console.error('[MQTT] Invalid ACK modeAuto type, ignoring:', d.modeAuto);
+        return;
+      }
     }
 
     const pending = pendingCommands.get(ack.requestId);
@@ -66,7 +94,7 @@ export function sendCommandWithAck(command: Record<string, unknown>): Promise<Mq
 
     pendingCommands.set(requestId, pending);
 
-    const published = publishCommand({ ...command, requestId });
+    const published = _internal.publishCommand({ ...command, requestId });
     if (!published) {
       clearTimeout(timeoutId);
       pendingCommands.delete(requestId);
