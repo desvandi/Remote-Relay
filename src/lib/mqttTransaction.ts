@@ -1,7 +1,8 @@
 // =============================================================================
 // MQTT Command Transaction — send command, wait for ACK with timeout
 // =============================================================================
-import { _internal, onAck } from './mqtt';
+import { onAck } from './mqtt';
+import { publishCommand } from './mqttPublisher';
 import { pendingCommands, type PendingCommand, type MqttAck } from './mqttPending';
 
 const ACK_TIMEOUT_MS = 5000; // 5 seconds
@@ -94,7 +95,7 @@ export function sendCommandWithAck(command: Record<string, unknown>): Promise<Mq
 
     pendingCommands.set(requestId, pending);
 
-    const published = _internal.publishCommand({ ...command, requestId });
+    const published = publishCommand({ ...command, requestId });
     if (!published) {
       clearTimeout(timeoutId);
       pendingCommands.delete(requestId);

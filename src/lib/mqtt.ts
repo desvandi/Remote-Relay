@@ -7,6 +7,7 @@ import mqtt from 'mqtt';
 import type { SystemStatus, ActivityLog } from './types';
 import { cancelAllPendingCommands } from './mqttPending';
 import type { MqttAck } from './mqttPending';
+import { setPublisherClient } from './mqttPublisher';
 
 // Re-export MqttAck type for consumers
 export type { MqttAck } from './mqttPending';
@@ -109,6 +110,9 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
 
     state.client = client;
 
+    // Inject client + credentials to internal publisher
+    setPublisherClient(client, state.deviceId, state.password);
+
     // Settle-once pattern: prevent multiple resolve/reject calls
     let settled = false;
     const resolveOnce = () => { if (!settled) { settled = true; resolve(); } };
@@ -126,15 +130,23 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
             rejectOnce(new Error(`MQTT subscription failed: ${err.message}`));
             return;
           }
-          // Validate all subscriptions were granted (QoS 128 = denied by broker)
-          const denied = granted?.filter((g: { qos: number; topic: string }) => g.qos === 128);
-          if (denied && denied.length > 0) {
+          // Validate all 4 subscriptions were granted
+          const expectedTopics = 4;
+          if (!granted || granted.length !== expectedTopics) {
+            console.error('[MQTT] Incomplete subscriptions:', granted);
+            state.connected = false;
+            rejectOnce(new Error(`MQTT subscription incomplete: expected ${expectedTopics}, got ${granted?.length || 0}`));
+            return;
+          }
+          // Check for denied subscriptions (QoS 128 = broker denial)
+          const denied = granted.filter((g: { qos: number; topic: string }) => g.qos === 128);
+          if (denied.length > 0) {
             console.error('[MQTT] Subscriptions denied:', denied);
             state.connected = false;
             rejectOnce(new Error(`MQTT subscriptions denied: ${denied.map((d: { topic: string }) => d.topic).join(', ')}`));
             return;
           }
-          console.log('[MQTT] Subscriptions confirmed:', granted);
+          console.log('[MQTT] All subscriptions confirmed:', granted);
           state.connected = true;
           onlineCallbacks.forEach((cb) => cb(true));
           resolveOnce();
@@ -163,7 +175,7 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
         onlineCallbacks.forEach((cb) => cb(online));
       } else if (topic.endsWith('/ack')) {
         try {
-          const ack = JSON.parse(msg) as { requestId: string; success: boolean; message: string };
+          const ack = JSON.parse(msg) as MqttAck;
           console.log('[MQTT] ACK received:', ack);
           ackCallbacks.forEach((cb) => cb(ack));
         } catch (e) {
@@ -195,6 +207,9 @@ export function disconnectMqtt() {
   // Cancel all pending commands SYNCHRONOUSLY before closing client
   cancelAllPendingCommands();
 
+  // Clear publisher client (prevents any future publish attempts)
+  setPublisherClient(null, null, null);
+
   if (state.client) {
     state.client.end(true);
     state.client = null;
@@ -205,42 +220,10 @@ export function disconnectMqtt() {
 }
 
 // ---------------------------------------------------------------------------
-// Raw publisher — NOT exported. Only accessible via sendCommandWithAck().
-// This prevents developers from accidentally using fire-and-forget publish.
+// Publisher is in mqttPublisher.ts (internal module).
+// mqtt.ts injects client+credentials via setPublisherClient() during connect/disconnect.
+// No raw publish function is exported from this module.
 // ---------------------------------------------------------------------------
-function publishCommand(command: Record<string, unknown>): boolean {
-  if (!state.client || !state.connected || !state.deviceId || !state.password) {
-    console.warn('[MQTT] Not connected — cannot publish command');
-    return false;
-  }
-  const topic = `timer12/${state.deviceId}/${state.password}/command`;
-  const payload = JSON.stringify(command);
-  const result = state.client.publish(topic, payload, { qos: 1 });
-  if (!result) {
-    console.error('[MQTT] Publish failed — client not connected');
-    return false;
-  }
-  return true;
-}
-
-// Publish OTA update command via MQTT — also internal, use sendCommandWithAck
-function publishOtaUpdate(url: string, version: string): boolean {
-  if (!state.client || !state.connected || !state.deviceId || !state.password) {
-    console.warn('[MQTT] Not connected — cannot publish OTA');
-    return false;
-  }
-  const topic = `timer12/${state.deviceId}/${state.password}/ota`;
-  const payload = JSON.stringify({ action: 'update', url, version });
-  state.client.publish(topic, payload, { qos: 1 });
-  return true;
-}
-
-// Expose internal publishers ONLY to mqttTransaction.ts via a controlled export
-// This is the ONLY way to access publishCommand — not via public API
-export const _internal = {
-  publishCommand,
-  publishOtaUpdate,
-};
 
 // ---------------------------------------------------------------------------
 // Subscribe to status updates (real-time push from ESP32)

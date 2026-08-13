@@ -11,17 +11,19 @@ export type PendingCommand = {
   timeoutId: ReturnType<typeof setTimeout>;
 };
 
+export type RelayAckData = {
+  channelId: number;
+  state: boolean;
+  source: 'manual' | 'schedule' | 'pir' | 'off';
+  modeAuto: boolean;
+};
+
 export type MqttAck = {
   requestId: string;
   success: boolean;
   message: string;
   timestamp?: number;
-  data?: {
-    channelId?: number;
-    state?: boolean;
-    source?: string;
-    modeAuto?: boolean;
-  };
+  data?: RelayAckData;
 };
 
 // Shared Map — accessible by both mqtt.ts (for cleanup) and mqttTransaction.ts (for add/match)
