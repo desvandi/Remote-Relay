@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { mqttApi } from '@/lib/mqtt';
+import { sendCommandWithAck } from '@/lib/mqttTransaction';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useMqttStatus, useMqttLogs } from '@/components/providers/mqtt-provider';
 import { toast } from 'sonner';
@@ -130,18 +131,16 @@ export function useRelayMutation() {
   return useMutation({
     mutationFn: async (mutation: RelayMutation) => {
       if (isMqttMode) {
-        // MQTT: publish command — check if publish actually succeeded
-        let success = false;
-        if (mutation.action === 'toggle') success = mqttApi.relayToggle(mutation.channelId);
-        else if (mutation.action === 'on') success = mqttApi.relayOn(mutation.channelId);
-        else if (mutation.action === 'off') success = mqttApi.relayOff(mutation.channelId);
-        else if (mutation.action === 'set_mode') {
-          success = mqttApi.relaySetMode(mutation.channelId, mutation.mode ?? 'auto', mutation.manualState);
-        }
-        if (!success) {
-          throw new Error('MQTT publish failed — device may be offline');
-        }
-        return { channel: null };
+        // MQTT: send command and WAIT for ACK from ESP32 (not just publish)
+        // This ensures ESP32 actually received + executed the command
+        const ack = await sendCommandWithAck({
+          type: 'relay',
+          action: mutation.action,
+          channelId: mutation.channelId,
+          mode: mutation.mode,
+          manualState: mutation.manualState,
+        });
+        return { channel: null, ack };
       }
       return api.relay(mutation);
     },

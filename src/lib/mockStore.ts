@@ -33,11 +33,17 @@ const LOG_FILE = path.join(DATA_DIR, 'mock-logs.json');
 // Demo mode flag — when false, mock API routes return 403 (disabled)
 const DEMO_MODE = process.env.NODE_ENV === 'development' || process.env.DEMO_MODE === 'true';
 
+// PRODUCTION GUARD: mock auth must NEVER work in production without explicit env vars
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET && !process.env.DEMO_MODE) {
+  // In production without JWT_SECRET, mock auth is disabled
+  // User must use MQTT mode (real ESP32) or set JWT_SECRET env var
+}
+
 // Default credentials (demo only — DO NOT use in production)
 // In production (DEMO_MODE=false), these are rejected and user must set
 // MOCK_USER + MOCK_PASSWORD env vars, or use real ESP32 via MQTT
-const DEFAULT_USER = process.env.MOCK_USER || 'admin';
-const DEFAULT_PASSWORD_HASH = process.env.MOCK_PASSWORD || 'admin123';
+const DEFAULT_USER = process.env.MOCK_USER || (DEMO_MODE ? 'admin' : '');
+const DEFAULT_PASSWORD_HASH = process.env.MOCK_PASSWORD || (DEMO_MODE ? 'admin123' : '');
 const JWT_SECRET = process.env.JWT_SECRET || (DEMO_MODE ? 'timer12-demo-only-secret' : '');
 
 const NUM_CHANNELS = 12;

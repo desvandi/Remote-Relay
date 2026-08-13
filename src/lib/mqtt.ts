@@ -81,7 +81,7 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
 
     // Topic includes password for security: timer12/<mac>/<password>/<subtopic>
     const baseTopic = `timer12/${state.deviceId}/${state.password}`;
-    const clientId = `pwa-${Math.random().toString(16).slice(2, 10)}`;
+    const clientId = `pwa-${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2, 10)}`;
 
     console.log(`[MQTT] Connecting to ${MQTT_BROKER_URL} as ${clientId}...`);
     console.log(`[MQTT] Device: ${state.deviceId}, topics: ${baseTopic}/{status,command,log,online}`);
