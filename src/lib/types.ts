@@ -168,13 +168,18 @@ export type SetTimeRequest = {
 };
 
 // ---------- OTA ----------
+// audit-fixes-v2 (auditor #4 P1-6): fields that require real update-channel
+//   verification are now nullable. In MQTT mode, the PWA does not perform an
+//   actual update-channel check (only the firmware itself does, via Ed25519-
+//   signed MQTT OTA). Returning `null` for these fields signals to the UI
+//   that the status is "unknown" rather than falsely claiming "verified".
 export type FirmwareInfo = {
   currentVersion: string;
   buildDate: string;
-  latestAvailable: string;
-  updateAvailable: boolean;
-  signatureVerified: boolean;
-  otaStatus: 'up-to-date' | 'update-available' | 'uploading' | 'verifying' | 'installing' | 'failed' | 'rollback';
+  latestAvailable: string | null;
+  updateAvailable: boolean | null;
+  signatureVerified: boolean | null;
+  otaStatus: 'up-to-date' | 'update-available' | 'uploading' | 'verifying' | 'installing' | 'failed' | 'rollback' | 'unknown';
   lastUpdateAt: number | null;
   lastUpdateStatus: 'success' | 'failed' | 'rollback' | null;
 };
