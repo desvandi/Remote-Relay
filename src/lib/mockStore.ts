@@ -38,24 +38,50 @@ const DEMO_MODE = process.env.NODE_ENV === 'development'
   || process.env.DEMO_MODE === 'true'
   || process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 
+// audit-fixes (auditor #2 P0): PRODUCTION FAIL-CLOSED GUARD.
+//   In production (NODE_ENV === 'production' AND NOT demo mode), mock auth is
+//   HARD-DISABLED regardless of which env vars are set. This prevents an admin
+//   who accidentally leaves NEXT_PUBLIC_DEMO_MODE=true in Vercel production
+//   from exposing the dashboard with admin/admin123 credentials.
+//   To use mock auth on a production server, you MUST set NODE_ENV to something
+//   other than 'production' (e.g., 'staging') AND set JWT_SECRET + MOCK_USER +
+//   MOCK_PASSWORD explicitly. The defaults below are now empty in ALL modes
+//   except local dev — never in production.
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const MOCK_AUTH_EXPLICITLY_ENABLED =
+  Boolean(process.env.JWT_SECRET && process.env.MOCK_USER && process.env.MOCK_PASSWORD)
+  && !IS_PRODUCTION;
+
 // PRODUCTION GUARD (non-throwing):
-// Mock auth is "enabled" only when (a) dev mode, OR (b) DEMO_MODE=true, OR
-// (c) JWT_SECRET + MOCK_USER + MOCK_PASSWORD are all explicitly set.
+// Mock auth is "enabled" only when (a) dev mode, OR (b) DEMO_MODE=true (which
+// implies non-production intent), OR (c) JWT_SECRET + MOCK_USER + MOCK_PASSWORD
+// are all explicitly set AND we're not in production.
 // When disabled, verifyCredentials() returns false and getJwtSecret() returns
 // empty string — no throws, no 500s. API routes use this to short-circuit
 // with a graceful JSON 403 response.
 export function isMockAuthEnabled(): boolean {
-  return DEMO_MODE
-    || Boolean(process.env.JWT_SECRET && process.env.MOCK_USER && process.env.MOCK_PASSWORD);
+  return DEMO_MODE || MOCK_AUTH_EXPLICITLY_ENABLED;
 }
 
-// Default credentials (demo only — DO NOT use in production)
-// In production (DEMO_MODE=false), these are rejected and user must set
-// MOCK_USER + MOCK_PASSWORD env vars, or use real ESP32 via MQTT
-const DEFAULT_USER = process.env.MOCK_USER || (DEMO_MODE ? 'admin' : '');
-const DEFAULT_PASSWORD_HASH = process.env.MOCK_PASSWORD || (DEMO_MODE ? 'admin123' : '');
-// Empty string when disabled → verifyJwt returns null naturally, no throw.
-const JWT_SECRET = process.env.JWT_SECRET || (DEMO_MODE ? 'timer12-demo-only-secret' : '');
+// audit-fixes (auditor #2 P0): Default credentials are now EMPTY in all modes
+//   except local dev (NODE_ENV === 'development'). The previous fallback
+//   'admin'/'admin123' was a known-credential backdoor that could be accidentally
+//   activated if NEXT_PUBLIC_DEMO_MODE was left set in production.
+//   In dev mode, the fallback is kept for DX (no env file needed for local dev).
+//   In production with DEMO_MODE=true (unusual, only for staging demos), the
+//   admin MUST still set MOCK_USER + MOCK_PASSWORD explicitly.
+const DEV_DEFAULT_USER = 'admin';
+const DEV_DEFAULT_PASSWORD = 'admin123';
+const DEFAULT_USER = process.env.MOCK_USER
+  || (process.env.NODE_ENV === 'development' ? DEV_DEFAULT_USER : '');
+const DEFAULT_PASSWORD_HASH = process.env.MOCK_PASSWORD
+  || (process.env.NODE_ENV === 'development' ? DEV_DEFAULT_PASSWORD : '');
+// audit-fixes (auditor #2 P1): JWT_SECRET fallback is now EMPTY in all modes
+//   except local dev. Previously fell back to 'timer12-demo-only-secret' in
+//   DEMO_MODE which could be brute-forced. Now: dev gets the dev secret for DX,
+//   production MUST set JWT_SECRET explicitly or mock auth is disabled.
+const JWT_SECRET = process.env.JWT_SECRET
+  || (process.env.NODE_ENV === 'development' ? 'timer12-dev-only-secret' : '');
 
 const NUM_CHANNELS = 12;
 const NUM_PIR = 4;
