@@ -79,14 +79,21 @@ export function useVersion() {
   });
 
   if (isMqttMode && mqttStatus) {
+    // audit-fixes-v2 (auditor #4 P1-6): previously hardcoded
+    //   `latestAvailable: '4.0.0', updateAvailable: false, signatureVerified: true,
+    //    otaStatus: 'up-to-date'` — this misled users into thinking firmware was
+    //    verified up-to-date when no actual update channel check was performed.
+    //   Now: only return what we actually know (current version from MQTT status).
+    //   Fields that require real update-channel verification are null/unknown.
+    //   The PWA UI should treat these as "unknown" rather than "verified".
     return {
       data: {
         currentVersion: mqttStatus.firmwareVersion,
         buildDate: mqttStatus.buildDate,
-        latestAvailable: '4.0.0',
-        updateAvailable: false,
-        signatureVerified: true,
-        otaStatus: 'up-to-date' as const,
+        latestAvailable: null,
+        updateAvailable: null,
+        signatureVerified: null,
+        otaStatus: 'unknown' as const,
         lastUpdateAt: null,
         lastUpdateStatus: null,
       },
