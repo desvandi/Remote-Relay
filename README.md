@@ -338,6 +338,25 @@ MOCK_PASSWORD=admin123
 - **WSS (WebSocket Secure)**: Port 8884 for browser connections
 - **TLS**: End-to-end encryption between PWA ↔ broker ↔ ESP32
 
+#### ⚠️ `NEXT_PUBLIC_MQTT_PASSWORD` is NOT a secret (audit-fixes P0-3)
+
+The `NEXT_PUBLIC_*` prefix means these env vars are **inlined into the client bundle at build time**. Any web visitor can extract them from the browser's JavaScript:
+
+```bash
+# Anyone can extract the "secret" broker password from the deployed PWA:
+curl https://your-pwa.vercel.app/_next/static/chunks/main-*.js | grep -o 'MQTT_PASSWORD[^"]*"[^"]*"'
+```
+
+This is **by design** (the browser needs the credential to connect to the broker), but it means the broker credential is **not a secret in the traditional sense**. Mitigations, in order of preference:
+
+1. **Per-device broker ACL (MANDATORY for production).** Create one broker user per device: `pwa-<MAC>`. Scope each user's ACL to exactly that device's topics (`timer12/<MAC>/command` write + `timer12/<MAC>/{status,log,ack,online}` read). A leaked credential then only compromises ONE device, not the whole fleet. See the [firmware README's ACL section](https://github.com/desvandi/Firmware-code-gs_relaytimer#2f-configure-acl-per-device-topic-restrictions---mandatory-for-production) for the exact pattern.
+
+2. **Short-lived broker credentials via auth gateway (recommended for >10 devices).** Deploy a small backend that authenticates the user (e.g., with the device MAC + MQTT password entered at login) and issues a short-lived (e.g., 1-hour) broker credential scoped to that device. The PWA then connects with the short-lived credential instead of a static `NEXT_PUBLIC_MQTT_PASSWORD`. This is not implemented in the current PWA — it's a recommended architecture evolution.
+
+3. **Accept the risk for single-device deployments.** If you have exactly ONE device and trust everyone who can load the PWA, you can use a single `pwa-user` credential. This is the default behavior of this repo. **Not acceptable for 220V relay control in shared or public deployments.**
+
+The default `NEXT_PUBLIC_MQTT_BROKER_URL = wss://broker.hivemq.com:8884/mqtt` (HiveMQ public broker) is for development only. Anyone who knows your device MAC can publish commands to it. **Never use HiveMQ public for 220V relay control.**
+
 ---
 
 ## Features Matrix

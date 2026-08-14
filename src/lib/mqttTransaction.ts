@@ -33,31 +33,38 @@ const ACK_TIMEOUT_MS = 5000; // 5 seconds
 // =============================================================================
 // This is the ONLY place in the codebase that can publish raw MQTT messages.
 // mqtt.ts calls setPublisherClient() during connectMqtt() to inject the
-// connected client + credentials. No other module can access this — it's
-// module-private to mqttTransaction.ts.
+// connected client. No other module can access this — it's module-private
+// to mqttTransaction.ts.
 
 let _client: mqtt.MqttClient | null = null;
 let _deviceId: string | null = null;
-// R10C-3: _password is no longer used in topic path. Kept for backward compat
-// (mqtt.ts still passes it) but NOT included in topic. Authentication is
-// handled by broker (username/password in MQTT CONNECT), authorization by
-// broker ACL (per-device topic restrictions).
-let _password: string | null = null;
+// audit-fixes: removed dead _password field. It was kept "for potential future
+//   use" per the R10C-3 comment, but never actually used (password is NOT in
+//   the topic path — auth is via broker username/password). Keeping an unused
+//   password field in module scope meant the MQTT password lived in memory
+//   indefinitely after connect, increasing the blast radius of any RCE in
+//   the Next.js process. mqtt.ts setPublisherClient() signature is unchanged
+//   (still accepts a password arg) for API stability, but the value is now
+//   discarded immediately.
 
 /**
  * R10B-3: Called by mqtt.ts to inject the MQTT client + credentials.
  * This is the ONLY way to set the publisher client — there's no public
  * `publishCommand` export anymore. Publishing is enforced to go through
  * sendCommandWithAck() which adds the requestId + ACK transaction pattern.
+ *
+ * audit-fixes: the `password` parameter is now ignored (was stored but never
+ *   used in topic path). Kept in signature for backward compatibility with
+ *   mqtt.ts caller — do NOT rely on it being stored.
  */
 export function setPublisherClient(
   client: mqtt.MqttClient | null,
   deviceId: string | null,
-  password: string | null
+  _password: string | null  // audit-fixes: prefixed with _ to mark as intentionally unused
 ): void {
   _client = client;
   _deviceId = deviceId;
-  _password = password;  // kept for potential future use, NOT in topic
+  // password deliberately not stored — see comment above.
 }
 
 /**
