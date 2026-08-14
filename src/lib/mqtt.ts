@@ -96,7 +96,8 @@ export function connectMqtt(deviceId: string, password: string): Promise<void> {
       return;
     }
 
-    const baseTopic = `timer12/${state.deviceId}/${state.password}`;
+    // R10C-3: password removed from topic path. Auth via broker credentials.
+    const baseTopic = `timer12/${state.deviceId}`;
     const clientId = `pwa-${crypto.randomUUID()}`;
 
     console.log(`[MQTT] Connecting to ${MQTT_BROKER_URL} as ${clientId}...`);

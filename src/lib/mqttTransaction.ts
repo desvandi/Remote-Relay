@@ -38,6 +38,10 @@ const ACK_TIMEOUT_MS = 5000; // 5 seconds
 
 let _client: mqtt.MqttClient | null = null;
 let _deviceId: string | null = null;
+// R10C-3: _password is no longer used in topic path. Kept for backward compat
+// (mqtt.ts still passes it) but NOT included in topic. Authentication is
+// handled by broker (username/password in MQTT CONNECT), authorization by
+// broker ACL (per-device topic restrictions).
 let _password: string | null = null;
 
 /**
@@ -53,20 +57,23 @@ export function setPublisherClient(
 ): void {
   _client = client;
   _deviceId = deviceId;
-  _password = password;
+  _password = password;  // kept for potential future use, NOT in topic
 }
 
 /**
  * R10B-3: Private publisher — NOT exported.
  * Only sendCommandWithAck() can call this, ensuring every published command
  * has a requestId and waits for ACK.
+ *
+ * R10C-3: Topic no longer includes password. Format: timer12/<deviceId>/command
  */
 function publishCommand(command: Record<string, unknown>): boolean {
-  if (!_client || !_deviceId || !_password) {
+  if (!_client || !_deviceId) {
     console.warn('[MQTT] Not connected — cannot publish command');
     return false;
   }
-  const topic = `timer12/${_deviceId}/${_password}/command`;
+  // R10C-3: password removed from topic — auth is via broker credentials
+  const topic = `timer12/${_deviceId}/command`;
   const payload = JSON.stringify(command);
   const result = _client.publish(topic, payload, { qos: 1 });
   if (!result) {
