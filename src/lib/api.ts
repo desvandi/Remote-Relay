@@ -5,6 +5,17 @@
 //   (e.g., https://timer.example.com) which routes to the ESP32.
 // In demo/mock mode: BASE_URL is empty so all calls go to the relative
 //   /api/* Next.js route handlers in this project.
+//
+// P2-2 F-P0-2 RECONCILIATION: REST mutations now send `requestId` to satisfy
+//   the firmware C2-C5 TransactionJournal contract. Firmware handlers
+//   (relay, schedule, channel, pir) require requestId for:
+//     - transaction deduplication
+//     - ACK replay on duplicate
+//     - cross-ingress hash symmetry with MQTT path
+//   requestId is generated via crypto.randomUUID() (same generator as MQTT
+//   path in mqttTransaction.ts — ensures cross-ingress consistency).
+//   requestId is intentionally EXCLUDED from the command hash (it identifies
+//   the transaction, not the command — see firmware CommandHash.h).
 // =============================================================================
 
 import type { ApiResponse } from '@/lib/types';
@@ -29,6 +40,23 @@ export function setCsrfToken(token: string | null) {
 
 export function getCsrfToken(): string | null {
   return csrfTokenCache;
+}
+
+/**
+ * Generate a requestId for REST mutations.
+ *
+ * Uses crypto.randomUUID() — same generator as MQTT path (mqttTransaction.ts)
+ * to ensure cross-ingress consistency. Firmware validateRequestId() accepts
+ * 1-64 chars of [a-zA-Z0-9-_]; UUID v4 (36 chars, hex+hyphens) is valid.
+ *
+ * The requestId identifies the TRANSACTION (for dedup/ACK replay), NOT the
+ * command. It is intentionally excluded from the canonical command hash.
+ * Two requests with the same logical command but different requestIds
+ * produce the same commandHash — enabling cross-ingress duplicate detection.
+ */
+function generateRequestId(): string {
+  // Use crypto.randomUUID() — no Math.random() fallback (same as MQTT path)
+  return crypto.randomUUID();
 }
 
 async function request<T>(
@@ -98,17 +126,32 @@ export const api = {
   status: () => request<import('@/lib/types').SystemStatus>('/api/status'),
   config: () => request<import('@/lib/types').SystemConfig>('/api/config'),
   version: () => request<import('@/lib/types').FirmwareInfo>('/api/version'),
-  // Mutations
+  // Mutations — all REST mutations now send requestId for TransactionJournal contract (firmware C2-C5)
   relay: (mutation: import('@/lib/types').RelayMutation) =>
-    request<{ channel: import('@/lib/types').Channel }>('/api/relay', { method: 'POST', body: mutation }),
+    request<{ channel: import('@/lib/types').Channel }>('/api/relay', {
+      method: 'POST',
+      body: { ...mutation, requestId: generateRequestId() },
+    }),
   channelRename: (channelId: number, name: string) =>
-    request<{ channel: { id: number; name: string } }>('/api/channel', { method: 'POST', body: { channelId, name } }),
+    request<{ channel: { id: number; name: string } }>('/api/channel', {
+      method: 'POST',
+      body: { channelId, name, requestId: generateRequestId() },
+    }),
   schedule: (sched: import('@/lib/types').Schedule) =>
-    request<{ schedule: import('@/lib/types').Schedule }>('/api/schedule', { method: 'POST', body: sched }),
-  scheduleDelete: (id: number) =>
-    request<{ deleted: boolean }>(`/api/schedule?id=${id}`, { method: 'DELETE' }),
+    request<{ schedule: import('@/lib/types').Schedule }>('/api/schedule', {
+      method: 'POST',
+      body: { ...sched, requestId: generateRequestId() },
+    }),
+  scheduleDelete: (id: number, channelId?: number) =>
+    request<{ deleted: boolean }>(
+      `/api/schedule?id=${id}${channelId ? `&channelId=${channelId}` : ''}&requestId=${generateRequestId()}`,
+      { method: 'DELETE' }
+    ),
   pir: (id: number, opts: { enabled?: boolean; holdTime?: number }) =>
-    request<{ pir: import('@/lib/types').PIRState }>('/api/pir', { method: 'POST', body: { id, ...opts } }),
+    request<{ pir: import('@/lib/types').PIRState }>('/api/pir', {
+      method: 'POST',
+      body: { id, ...opts, requestId: generateRequestId() },
+    }),
   pirTest: (id: number) =>
     request<{ triggered: boolean }>('/api/pir/test', { method: 'POST', body: { id } }),
   time: (datetime: string) =>
