@@ -14,6 +14,13 @@ import {
 import { formatUptime, formatTime, formatRssi } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Channel, RelaySource } from '@/lib/types';
+// v4.1 — DC Energy & Battery Monitoring views (brief §35-39)
+import { BatterySummary } from '@/components/battery/battery-summary';
+import { CellMonitorView } from '@/components/battery/cell-monitor-view';
+import { PowerFlowView } from '@/components/battery/power-flow-view';
+import { BatteryHealthView } from '@/components/battery/battery-health-view';
+import { EnvironmentView } from '@/components/battery/environment-view';
+import { BatteryDiagnosticsView } from '@/components/battery/battery-diagnostics-view';
 
 export function DashboardView() {
   const { t, lang } = useLanguage();
@@ -122,6 +129,25 @@ export function DashboardView() {
             value={`Rp ${Math.round((status.energy ?? 0) * 1467).toLocaleString('id-ID')}`}
             accent={status.powerAlarm ? "error" : "off"}
           />
+        </div>
+      )}
+
+      {/* v4.1 — DC Energy & Battery Monitoring section (brief §35-39).
+           Renders only when firmware provides the optional `battery` block
+           (4.0.x firmware → omitted → no UI change, backward-compat §55). */}
+      {status.battery && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+            DC Energy & Battery Monitoring
+          </h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <BatterySummary battery={status.battery} environment={status.environment} />
+            <PowerFlowView powerFlow={status.powerFlow} />
+            <CellMonitorView battery={status.battery} />
+            <BatteryHealthView battery={status.battery} />
+            <EnvironmentView environment={status.environment} />
+            <BatteryDiagnosticsView diagnostics={status.battery.diagnostics} />
+          </div>
         </div>
       )}
 

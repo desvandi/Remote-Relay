@@ -103,6 +103,115 @@ export type LogFilter = {
 };
 
 // ---------- STATUS (dashboard overview) ----------
+// v4.1 (brief §31): Added battery / powerFlow / environment / energy nested
+//   objects. All are optional — older firmware (4.0.x) without battery
+//   monitoring will omit them and the PWA renders as before (brief §55).
+//   No `any` is used (brief §34). Invalid readings arrive as `null`, never 0.
+export type AlarmState = 'NORMAL' | 'WARNING' | 'FAULT' | 'UNAVAILABLE';
+export type CellSensorState = 'ok' | 'i2c_error' | 'tap_fault' | 'invalid_value' | 'range_fault' | 'stale';
+export type ResistanceQuality = 'INVALID' | 'LOW_DELTA_I' | 'UNSTABLE' | 'VALID' | 'HIGH_CONFIDENCE';
+
+export type CellReading = {
+  index: number;                 // 1..8
+  voltage: number | null;        // V (null if invalid — brief §17)
+  state: CellSensorState;
+};
+
+export type CellMetrics = {
+  min: number;
+  max: number;
+  average: number;
+  delta: number;                 // cellMax - cellMin
+  minIndex: number;              // 1..8
+  maxIndex: number;
+};
+
+export type PackResistanceResult = {
+  ohms: number | null;
+  deltaV: number | null;
+  deltaI: number | null;
+  sampleWindowMs: number | null;
+  quality: ResistanceQuality;
+};
+
+export type CellResistanceResult = {
+  index: number;                 // 1..8
+  ohms: number | null;
+  quality: ResistanceQuality;
+};
+
+export type BatteryDiagnosticsState = {
+  batteryVoltageFault: boolean;
+  batteryCurrentSensorFault: boolean;
+  inverterCurrentSensorFault: boolean;
+  cellMeasurementFault: boolean;
+  cellTapFault: boolean;
+  cellOverVoltage: boolean;
+  cellUnderVoltage: boolean;
+  cellImbalance: boolean;
+  highPackResistance: boolean;
+  highCellResistance: boolean;
+  powerFlowInconsistency: boolean;
+  sht31Fault: boolean;
+  adsFault: boolean;
+  inaFault: boolean;
+  overall: AlarmState;
+};
+
+export type BatteryStatus = {
+  packVoltage: number | null;     // V
+  packVoltageValid: boolean;
+  packVoltageSource: string;       // 'ads1115_bplus' | 'esp32_adc1' | 'unavailable'
+  current: number | null;         // A (signed — >0 discharge, <0 charge)
+  power: number | null;           // W (signed)
+  chargePower: number | null;     // W (always >=0)
+  dischargePower: number | null;  // W (always >=0)
+  socAvailable: boolean;          // false when capacity not configured (brief §24)
+  soc: number | null;             // % 0..100 — null when unavailable
+  socSynchronized: boolean;
+  chargedAh: number | null;
+  dischargedAh: number | null;
+  chargedWh: number | null;
+  dischargedWh: number | null;
+  cells: CellReading[];           // length 8
+  cellMetrics?: CellMetrics;
+  packResistance: PackResistanceResult;
+  cellResistance: CellResistanceResult[];
+  valid: boolean;
+  diagnostics: BatteryDiagnosticsState;
+};
+
+export type PowerFlow = {
+  mpptCurrent: number | null;     // derived = Iinverter - Ibattery (brief §6)
+  mpptPower: number | null;
+  batteryCurrent: number | null;
+  batteryPower: number | null;    // signed
+  inverterCurrent: number | null;
+  inverterDcPower: number | null;
+  consistencyError: number | null;
+  consistency: AlarmState;
+  batteryCurrentValid: boolean;
+  inverterCurrentValid: boolean;
+  valid: boolean;
+};
+
+export type EnvironmentStatus = {
+  temperature: number | null;    // °C (ambient — NOT battery T, brief §20)
+  humidity: number | null;       // % RH
+  valid: boolean;
+  label: 'ambient';
+};
+
+export type EnergyCounters = {
+  pvWh: number | null;
+  batteryChargedWh: number | null;
+  batteryDischargedWh: number | null;
+  inverterDcWh: number | null;
+  chargedAh: number | null;
+  dischargedAh: number | null;
+  valid: boolean;
+};
+
 export type SystemStatus = {
   firmwareVersion: string;
   buildDate: string;
@@ -151,6 +260,14 @@ export type SystemStatus = {
     overpower?: boolean;
     lowPowerFactor?: boolean;
   };
+  // v4.1 — DC Energy & Battery Monitoring blocks (optional, brief §31)
+  battery?: BatteryStatus;
+  powerFlow?: PowerFlow;
+  environment?: EnvironmentStatus;
+  // Note: existing PZEM `energy?: number` (kWh) is preserved. New DC energy
+  // counters use a distinct key to avoid type collision (brief §55 backward
+  // compat — old `energy` field retains its original meaning).
+  dcEnergy?: EnergyCounters;
 };
 
 // ---------- CONFIG ----------
@@ -201,7 +318,9 @@ export type InsightCategory =
   | 'energy_analysis'
   | 'fault_detection'
   | 'predictive_maintenance'
-  | 'pir_recommendation';
+  | 'pir_recommendation'
+  | 'battery_analysis';  // v4.1 (brief §42) — advisory insights on cell imbalance,
+                          // pack/cell resistance, power-flow, inverter efficiency
 
 export type AiInsight = {
   id: string;

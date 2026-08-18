@@ -744,6 +744,36 @@ export function getSystemStatus(): SystemStatus {
   const pzApparent = pzVoltage * pzCurrent;
   const pzReactive = Math.sqrt(Math.max(0, pzApparent * pzApparent - pzPower * pzPower));
 
+  // v4.1 — DC Energy & Battery Monitoring mock (brief §56)
+  // Realistic 8S LiFePO4 around 26.4 V nominal. Cell voltages around 3.30 V ± 20 mV
+  // to demonstrate realistic cell delta. Currents signed per contract.
+  // Ibattery < 0 during day (PV charging), > 0 during night (discharge).
+  const hour = new Date().getHours();
+  const isCharging = hour >= 7 && hour <= 16;  // daylight hours
+  const batteryV = 26.4 + (Math.random() - 0.5) * 0.4;
+  const ibatt = isCharging ? -(15 + Math.random() * 25) : (8 + Math.random() * 18);
+  const iinv = 5 + Math.random() * 30;       // inverter always consumes
+  const imppt = iinv - ibatt;                // derived (brief §6)
+  const pbatt = batteryV * ibatt;            // signed
+  const pinv = batteryV * iinv;
+  const pmppt = batteryV * imppt;
+  const baseCellV = 3.30 + (Math.random() - 0.5) * 0.02;
+  const cellV = Array.from({ length: 8 }, (_, i) =>
+    Number((baseCellV + (Math.random() - 0.5) * 0.04 + (i === 3 ? -0.015 : 0)).toFixed(3))
+  );
+  const cellMin = Math.min(...cellV);
+  const cellMax = Math.max(...cellV);
+  const cellAvg = cellV.reduce((a, b) => a + b, 0) / 8;
+  const cellDelta = cellMax - cellMin;
+  const minIdx = cellV.indexOf(cellMin) + 1;
+  const maxIdx = cellV.indexOf(cellMax) + 1;
+  const pvWh = 4250 + Math.random() * 50;
+  const chargedWh = 3200 + Math.random() * 30;
+  const dischargedWh = 2900 + Math.random() * 30;
+  const inverterDcWh = 5500 + Math.random() * 40;
+  const chargedAh = chargedWh / 26.4;
+  const dischargedAh = dischargedWh / 26.4;
+
   return {
     firmwareVersion: G.state.firmwareVersion,
     buildDate: G.state.buildDate,
@@ -790,6 +820,94 @@ export function getSystemStatus(): SystemStatus {
       overcurrent: false,
       overpower: false,
       lowPowerFactor: false,
+    },
+    // v4.1 — DC Energy & Battery Monitoring blocks (brief §56 — demo mode)
+    battery: {
+      packVoltage: Number(batteryV.toFixed(2)),
+      packVoltageValid: true,
+      packVoltageSource: 'ads1115_bplus',
+      current: Number(ibatt.toFixed(2)),
+      power: Number(pbatt.toFixed(1)),
+      chargePower: Number(Math.max(0, -pbatt).toFixed(1)),
+      dischargePower: Number(Math.max(0, pbatt).toFixed(1)),
+      socAvailable: true,
+      soc: Number(((batteryV - 20.0) / (29.2 - 20.0) * 100).toFixed(1)),
+      socSynchronized: true,
+      chargedAh: Number(chargedAh.toFixed(2)),
+      dischargedAh: Number(dischargedAh.toFixed(2)),
+      chargedWh: Number(chargedWh.toFixed(1)),
+      dischargedWh: Number(dischargedWh.toFixed(1)),
+      cells: cellV.map((v, i) => ({
+        index: i + 1,
+        voltage: Number(v.toFixed(3)),
+        state: 'ok' as const,
+      })),
+      cellMetrics: {
+        min: Number(cellMin.toFixed(3)),
+        max: Number(cellMax.toFixed(3)),
+        average: Number(cellAvg.toFixed(3)),
+        delta: Number(cellDelta.toFixed(3)),
+        minIndex: minIdx,
+        maxIndex: maxIdx,
+      },
+      packResistance: {
+        ohms: 0.032 + Math.random() * 0.01,
+        deltaV: 0.05 + Math.random() * 0.02,
+        deltaI: 2.0 + Math.random() * 1.0,
+        sampleWindowMs: 2000,
+        quality: 'VALID' as const,
+      },
+      cellResistance: cellV.map((_, i) => ({
+        index: i + 1,
+        ohms: 0.004 + Math.random() * 0.003,
+        quality: 'VALID' as const,
+      })),
+      valid: true,
+      diagnostics: {
+        batteryVoltageFault: false,
+        batteryCurrentSensorFault: false,
+        inverterCurrentSensorFault: false,
+        cellMeasurementFault: false,
+        cellTapFault: false,
+        cellOverVoltage: false,
+        cellUnderVoltage: false,
+        cellImbalance: cellDelta > 0.08,
+        highPackResistance: false,
+        highCellResistance: false,
+        powerFlowInconsistency: false,
+        sht31Fault: false,
+        adsFault: false,
+        inaFault: false,
+        overall: cellDelta > 0.08 ? 'WARNING' as const : 'NORMAL' as const,
+      },
+    },
+    powerFlow: {
+      mpptCurrent: Number(imppt.toFixed(2)),
+      mpptPower: Number(pmppt.toFixed(1)),
+      batteryCurrent: Number(ibatt.toFixed(2)),
+      batteryPower: Number(pbatt.toFixed(1)),
+      inverterCurrent: Number(iinv.toFixed(2)),
+      inverterDcPower: Number(pinv.toFixed(1)),
+      consistencyError: Number(((Math.random() - 0.5) * 10).toFixed(1)),
+      consistency: 'NORMAL' as const,
+      batteryCurrentValid: true,
+      inverterCurrentValid: true,
+      valid: true,
+    },
+    environment: {
+      temperature: Number((28 + (Math.random() - 0.5) * 4).toFixed(1)),
+      humidity: Number((65 + (Math.random() - 0.5) * 10).toFixed(1)),
+      valid: true,
+      label: 'ambient' as const,
+    },
+    dcEnergy: {
+      pvWh: Number(pvWh.toFixed(1)),
+      batteryChargedWh: Number(chargedWh.toFixed(1)),
+      batteryDischargedWh: Number(dischargedWh.toFixed(1)),
+      inverterDcWh: Number(inverterDcWh.toFixed(1)),
+      chargedAh: Number(chargedAh.toFixed(2)),
+      dischargedAh: Number(dischargedAh.toFixed(2)),
+      valid: true,
     },
   };
 }
