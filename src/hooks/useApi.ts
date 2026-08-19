@@ -7,14 +7,104 @@ import { useAuth } from '@/components/providers/auth-provider';
 import { useMqttStatus, useMqttLogs } from '@/components/providers/mqtt-provider';
 import { toast } from 'sonner';
 import { useLanguage } from '@/components/providers/language-provider';
-import { useEffect } from 'react';
-import type { RelayMutation, Schedule, SystemConfig, RelaySource } from '@/lib/types';
+import { useEffect, useRef } from 'react';
+import type { RelayMutation, Schedule, SystemConfig, RelaySource, CommandExecutionState } from '@/lib/types';
+
+// ---------- PWA Timeout Reconciliation (BLOCKER-03) ----------
+// Per ChatGPT audit: "TIMEOUT ≠ FAILED. Setelah reconnect, PWA harus
+// mengambil state aktual dan menggunakan requestId, commandSequence,
+// stateSequence, timestamp untuk reconciliation."
+//
+// Track pending commands. When MQTT reconnects or /api/status arrives,
+// reconcile any TIMEOUT commands by comparing current device state
+// with what was requested.
+type PendingCommand = {
+  channelId: number;
+  desiredState: boolean;
+  requestId: string;
+  timestamp: number;
+  state: CommandExecutionState;
+};
+
+const pendingCommands: Map<string, PendingCommand> = new Map();
+
+export function trackPendingCommand(channelId: number, desiredState: boolean,
+                                      requestId: string): CommandExecutionState {
+  const entry: PendingCommand = {
+    channelId, desiredState, requestId,
+    timestamp: Date.now(),
+    state: 'COMMAND_PENDING',
+  };
+  pendingCommands.set(requestId, entry);
+  return 'COMMAND_PENDING';
+}
+
+export function resolvePendingCommand(requestId: string, success: boolean): CommandExecutionState {
+  const entry = pendingCommands.get(requestId);
+  if (!entry) return 'UNKNOWN';
+  if (success) {
+    entry.state = entry.desiredState ? 'CONFIRMED_ON' : 'CONFIRMED_OFF';
+  } else {
+    entry.state = 'FAILED';
+  }
+  pendingCommands.set(requestId, entry);
+  return entry.state;
+}
+
+export function timeoutPendingCommand(requestId: string): CommandExecutionState {
+  const entry = pendingCommands.get(requestId);
+  if (!entry) return 'UNKNOWN';
+  // TIMEOUT = UNKNOWN execution — device may or may not have executed
+  entry.state = 'TIMEOUT';
+  pendingCommands.set(requestId, entry);
+  return 'TIMEOUT';
+}
+
+// Called after MQTT reconnect or /api/status poll — reconcile TIMEOUT commands
+export function reconcilePendingCommands(reportedState: boolean, channelId: number): CommandExecutionState {
+  for (const [reqId, entry] of pendingCommands) {
+    if (entry.channelId !== channelId) continue;
+    if (entry.state !== 'TIMEOUT') continue;
+    // TIMEOUT → check if device state matches what we requested
+    if (reportedState === entry.desiredState) {
+      entry.state = entry.desiredState ? 'CONFIRMED_ON' : 'CONFIRMED_OFF';
+    } else {
+      entry.state = 'STATE_DRIFT';
+    }
+    pendingCommands.set(reqId, entry);
+    return entry.state;
+  }
+  return 'UNKNOWN';
+}
 
 // ---------- Status (hybrid REST/MQTT) ----------
 export function useStatus() {
   const { session, isMqttMode } = useAuth();
   const mqttStatus = useMqttStatus();
   const qc = useQueryClient();
+  const prevMqttConnected = useRef(false);
+
+  // When MQTT status arrives, update the query cache + reconcile pending commands
+  useEffect(() => {
+    if (mqttStatus) {
+      qc.setQueryData(['status'], mqttStatus);
+      // B03: Reconcile any TIMEOUT commands with current device state
+      if (mqttStatus.channels) {
+        for (const ch of mqttStatus.channels) {
+          reconcilePendingCommands(ch.state, ch.id);
+        }
+      }
+    }
+  }, [mqttStatus, qc]);
+
+  // B03: On MQTT reconnect, trigger immediate status fetch for reconciliation
+  useEffect(() => {
+    const mqttConnected = !!mqttStatus;
+    if (!prevMqttConnected.current && mqttConnected && isMqttMode) {
+      sendCommandWithAck({ type: 'system', action: 'getStatus' }).catch(() => {});
+    }
+    prevMqttConnected.current = mqttConnected;
+  }, [mqttStatus, isMqttMode]);
 
   // REST query (disabled when MQTT is active)
   const restQuery = useQuery({
@@ -23,13 +113,6 @@ export function useStatus() {
     enabled: session.isAuthenticated && !isMqttMode,
     refetchInterval: isMqttMode ? false : 3_000,
   });
-
-  // When MQTT status arrives, update the query cache so all components see it
-  useEffect(() => {
-    if (mqttStatus) {
-      qc.setQueryData(['status'], mqttStatus);
-    }
-  }, [mqttStatus, qc]);
 
   if (isMqttMode) {
     return {
