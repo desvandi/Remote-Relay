@@ -154,13 +154,22 @@ function defaultChannels(): Channel[] {
   return Array.from({ length: NUM_CHANNELS }, (_, i) => ({
     id: i + 1,
     name: names[i],
-    modeAuto: i < 8, // first 8 default to Auto, last 4 (PIR) to Manual initially
+    modeAuto: i < 8,
     manualState: false,
     pirEnabled: i >= PIR_CHANNEL_OFFSET,
     pirHoldTime: 120,
     state: false,
     source: 'off' as RelaySource,
     hasPir: i >= PIR_CHANNEL_OFFSET,
+    // v4.3.4 audit: state architecture fields for honest PWA demo
+    desiredState: false,
+    reportedState: false,
+    physicalState: null,  // null = UNKNOWN (no aux contact feedback)
+    stateConfidence: 'SOFTWARE_ONLY' as const,
+    stateSequence: 0,
+    stateTimestamp: 0,
+    fault: false,
+    safetyLockoutState: 'NORMAL' as const,
   }));
 }
 
