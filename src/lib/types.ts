@@ -212,6 +212,57 @@ export type EnergyCounters = {
   valid: boolean;
 };
 
+// v4.2 industrial-grade hardening (audit brief §13-16, §18-19, §22, §44, §59-60)
+// — All optional: PWA must render gracefully when firmware omits them.
+export type RtcStatus = 'VALID' | 'INVALID' | 'UNSYNCED';
+export type SensorStatus = 'VALID' | 'STALE' | 'ERROR' | 'UNAVAILABLE';
+export type AlarmSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
+
+export type HealthSnapshot = {
+  uptimeSeconds: number;
+  bootCount: number;
+  lastResetReason: number;
+  lastResetReasonStr: string;
+  watchdogResets: number;
+  brownoutResets: number;
+  freeHeap: number;
+  minFreeHeap: number;
+  largestFreeBlock: number;
+  wifiReconnectCount: number;
+  mqttReconnectCount: number;
+  rtcStatus: RtcStatus;
+  pzemStatus: SensorStatus;
+  pirStatus: SensorStatus;
+  sht31Status: SensorStatus;
+  ina219Status: SensorStatus;
+  ads1115Status: SensorStatus;
+  filesystemOk: boolean;
+  nvsOk: boolean;
+  mqttConnected: boolean;
+  highestAlarmSeverity: AlarmSeverity;
+  taskHeartbeats: {
+    relayEngine: number;
+    mqtt: number;
+    telemetry: number;
+    scheduler: number;
+    pir: number;
+    pzem: number;
+    ota: number;
+    healthMonitor: number;
+    batteryMonitor: number;
+  };
+};
+
+export type Alarm = {
+  code: string;
+  severity: AlarmSeverity;
+  active: boolean;
+  acknowledged: boolean;
+  raisedAt: number;       // ms since boot
+  clearedAt: number;     // 0 if still active
+  message: string;
+};
+
 export type SystemStatus = {
   firmwareVersion: string;
   buildDate: string;
@@ -268,6 +319,12 @@ export type SystemStatus = {
   // counters use a distinct key to avoid type collision (brief §55 backward
   // compat — old `energy` field retains its original meaning).
   dcEnergy?: EnergyCounters;
+  // v4.2 — industrial-grade hardening (audit brief §22, §44, §60)
+  health?: HealthSnapshot;
+  // Note: existing PZEM `alarms?: {...}` (AC power quality) is preserved.
+  // New system-wide alarm registry uses a distinct key to avoid type collision.
+  systemAlarms?: Alarm[];
+  telemetrySequence?: number;  // §22: monotonic counter for packet-loss detection
 };
 
 // ---------- CONFIG ----------

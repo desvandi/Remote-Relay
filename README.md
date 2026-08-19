@@ -1,12 +1,136 @@
-# Timer Digital Relay v4.0 — Remote Relay System
+# Timer Digital Relay v4.2 — Remote Relay System (Industrial-Grade)
 
-> Next.js 16 PWA dashboard for controlling 12 relay channels + 4 PIR sensors + PZEM-004T power meter via ESP32. Cloud-ready, MQTT remote access (works behind CGNAT/MiFi — no port forwarding needed), AI insights via Gemini.
+> Next.js 16 PWA dashboard for controlling 12 relay channels + 4 PIR sensors + PZEM-004T power meter + 8S LiFePO4 battery monitoring (INA219/ADS1115/SHT31) via ESP32. Cloud-ready, MQTT remote access (works behind CGNAT/MiFi — no port forwarding needed), AI insights via Gemini. **Strongly-typed telemetry** (no `any`) with explicit null handling for invalid sensor readings (never silent 0).
 
 [![PWA](https://img.shields.io/badge/PWA-installable-blue)](#)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](#)
+[![Industrial Grade](https://img.shields.io/badge/grade-industrial-orange)](#industrial-grade-hardening-v42)
+[![TypeScript Strict](https://img.shields.io/badge/TypeScript-strict-blue)](#)
 [![Security Audit](https://img.shields.io/badge/audit-round%2010K-brightgreen)](#)
 
 Companion firmware repo: **[desvandi/Firmware-code-gs_relaytimer](https://github.com/desvandi/Firmware-code-gs_relaytimer)**
+
+---
+
+## ⚡ What's New in v4.2 (Industrial-Grade Hardening)
+
+v4.2 PWA mirrors the firmware v4.2 industrial-grade hardening:
+
+### Type Safety (audit brief §34, §73)
+
+- **Strict TypeScript types** for all new telemetry — no `any` shortcuts.
+  Added types: `HealthSnapshot`, `Alarm`, `RtcStatus`, `SensorStatus`,
+  `AlarmSeverity`. All new fields are optional (`?:`) so old firmware
+  (v4.0/v4.1) still works with the v4.2 PWA.
+- **Explicit null handling**: invalid sensor readings arrive as `null`,
+  never as silent `0` (audit brief §20-21, §38). UI shows "N/A" or
+  "UNAVAILABLE" placeholders instead of misleading "0 V" / "0 A".
+- **Accessibility**: PWA components include text labels alongside color
+  indicators (audit brief §37 — "Do not use red/green colors as the only
+  indication"). Battery cell tiles show state strings like "OK",
+  "I2C ERR", "TAP FAULT", "INVALID", "RANGE", "STALE".
+
+### New Dashboard Sections
+
+The dashboard now has the following sections (in addition to the existing
+relay grid, PZEM power meter, scheduler, logs, OTA, settings):
+
+1. **Battery Summary** — Pack voltage, battery current, battery power,
+   SOC, charged/discharged Ah, ambient T/H
+2. **DC Power Flow** — MPPT/Battery/Inverter with direction derived from
+   signed power (NOT hard-coded — brief §36)
+3. **Cell Monitor** — 8-cell voltage grid + min/max/delta with text
+   status labels
+4. **Battery Health** — Pack + per-cell resistance + measurement quality
+5. **Environment** — Ambient T/RH clearly labeled as ambient
+6. **Battery Diagnostics** — 15 fault flags + overall severity
+   (NORMAL/WARNING/FAULT/UNAVAILABLE)
+
+### v4.2 Telemetry Fields
+
+```typescript
+// From src/lib/types.ts
+type SystemStatus = {
+  // ... existing v4.0 fields (firmwareVersion, channels, pirs, schedules,
+  //   stats, PZEM, alarms) ...
+  battery?: BatteryStatus;      // v4.1
+  powerFlow?: PowerFlow;         // v4.1
+  environment?: EnvironmentStatus;  // v4.1
+  dcEnergy?: EnergyCounters;     // v4.1 (separate from PZEM `energy`)
+  health?: HealthSnapshot;       // v4.2 — §44
+  systemAlarms?: Alarm[];        // v4.2 — §60 (distinct from PZEM `alarms`)
+  telemetrySequence?: number;    // v4.2 — §22 monotonic counter
+};
+```
+
+### Demo Mode
+
+PWA continues to work in demo mode (no ESP32 hardware required). Mock store
+generates realistic 8S LiFePO4 telemetry at ~26.4 V pack with signed
+currents (charging during day, discharging at night).
+
+---
+
+## 🏭 Industrial-Grade Hardening (v4.2)
+
+### PWA Authoritative State (audit brief §57)
+
+PWA NEVER assumes "button pressed = relay ON". The valid state flow is:
+
+```
+COMMAND_PENDING → (await device ACK) → CONFIRMED_ON / CONFIRMED_OFF
+                                            ↘ TIMEOUT / FAILED / DEVICE_OFFLINE
+```
+
+When a command is sent, the PWA shows a "PENDING" state. The actual
+relay state is determined by the device's next status publication. If
+the device doesn't confirm within the ACK timeout, the PWA shows
+"TIMEOUT" (not "OFF" — operators must know the command may not have
+executed).
+
+### Offline Behavior (audit brief §58)
+
+When the device is offline:
+
+- PWA shows the last known state with a "STALE" timestamp
+- PWA does NOT claim real-time
+- PWA queues only safe commands (manual relay toggles) — never schedules
+  or factory reset commands
+- Queued commands are sent on reconnect (with proper requestId + ACK
+  waiting per audit brief §24-27)
+
+### Compatibility Matrix (audit brief §66)
+
+| PWA Version | Firmware Version | Protocol Version | Notes |
+|---|---|---|---|
+| v4.2.x | v4.2.x | v4 | Full feature set — health, alarms, telemetry sequence |
+| v4.2.x | v4.1.x | v3 | Battery + power flow + environment (no health/alarms) |
+| v4.2.x | v4.0.x | v2 | Legacy — relay + PZEM only |
+| v4.1.x | v4.2.x | v3 | Backward-compatible — v4.1 PWA ignores new v4.2 fields |
+
+See [COMPATIBILITY_MATRIX.md](../Firmware-code-gs_relaytimer/COMPATIBILITY_MATRIX.md)
+in the firmware repo for full details.
+
+### Battery UI Components
+
+All battery UI components live under `src/components/battery/`:
+
+| Component | Brief § | Purpose |
+|---|---|---|
+| `battery-summary.tsx` | 35 | Pack V/I/P/SOC + charged/discharged Ah + ambient T/H |
+| `cell-monitor-view.tsx` | 37 | 8-cell voltage grid + min/max/delta + text status labels |
+| `power-flow-view.tsx` | 36 | MPPT/Battery/Inverter with signed-power-derived direction |
+| `battery-health-view.tsx` | 38 | Pack + per-cell resistance + quality + "Not available" when invalid |
+| `environment-view.tsx` | 39 | Ambient T/RH clearly labeled as ambient |
+| `battery-diagnostics-view.tsx` | 30, 59 | 15 fault flags + overall severity |
+
+---
+
+## 🔧 Existing v4.0/v4.1 Documentation
+
+The sections below are preserved from v4.0/v4.1. They remain accurate for
+all existing features. The v4.2 additions are layered on top — no existing
+behavior has been removed.
 
 ---
 

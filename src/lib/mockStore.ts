@@ -909,5 +909,43 @@ export function getSystemStatus(): SystemStatus {
       dischargedAh: Number(dischargedAh.toFixed(2)),
       valid: true,
     },
+    // v4.2 — industrial-grade health + alarms + telemetry sequence (brief §22, §44, §60)
+    health: {
+      uptimeSeconds,
+      bootCount: 1 + Math.floor(Math.random() * 3),
+      lastResetReason: 1,  // POWERON_RESET
+      lastResetReasonStr: 'POWERON_RESET',
+      watchdogResets: 0,
+      brownoutResets: 0,
+      freeHeap,
+      minFreeHeap: freeHeap - 5000,
+      largestFreeBlock: freeHeap - 2000,
+      wifiReconnectCount: Math.floor(Math.random() * 2),
+      mqttReconnectCount: Math.floor(Math.random() * 2),
+      rtcStatus: 'VALID' as const,
+      pzemStatus: 'VALID' as const,
+      pirStatus: 'VALID' as const,
+      sht31Status: 'VALID' as const,
+      ina219Status: 'VALID' as const,
+      ads1115Status: 'VALID' as const,
+      filesystemOk: true,
+      nvsOk: true,
+      mqttConnected: true,
+      highestAlarmSeverity: 'INFO' as const,
+      taskHeartbeats: {
+        relayEngine: Math.floor(Math.random() * 1000),
+        mqtt: Math.floor(Math.random() * 1000),
+        telemetry: Math.floor(Math.random() * 1000),
+        scheduler: Math.floor(Math.random() * 1000),
+        pir: Math.floor(Math.random() * 1000),
+        pzem: Math.floor(Math.random() * 1000),
+        ota: Math.floor(Math.random() * 1000),
+        healthMonitor: Math.floor(Math.random() * 1000),
+        batteryMonitor: Math.floor(Math.random() * 1000),
+      },
+    },
+    // v4.2 — system-wide alarm registry (brief §60). Empty = NORMAL state.
+    systemAlarms: [] as import('@/lib/types').Alarm[],
+    telemetrySequence: Math.floor(Math.random() * 1000) + 1,
   };
 }
