@@ -34,9 +34,34 @@ function fmtW(v: number | null) {
 }
 
 export function PowerFlowView({ powerFlow }: { powerFlow?: PowerFlow }) {
-  if (!powerFlow) return null;
+  // v4.1.1 audit: null-guard with explicit UNAVAILABLE placeholder (brief §46,
+  //   §59). Previously the component returned null silently — leaving a gap
+  //   in the dashboard grid. Now it renders an explicit UNAVAILABLE card so
+  //   operators know the subsystem is down, not just empty.
+  if (!powerFlow) {
+    return (
+      <Card className="overflow-hidden border-border/60 opacity-60">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="rounded-lg bg-muted/30 p-1.5">
+                <Sun className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <CardTitle className="text-sm font-semibold">DC Power Flow</CardTitle>
+            </div>
+            <Badge variant="outline" className="text-[9px] px-1.5 h-4 opacity-50">UNAVAILABLE</Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground">No power-flow telemetry from firmware.</p>
+        </CardContent>
+      </Card>
+    );
+  }
   const pf = powerFlow;
 
+  // v4.1.1 audit: when batteryCurrent/inverterCurrent are null, fall back to 0
+  //   for direction logic but display "N/A" in the UI (already handled by fmtA).
   const ibatt = pf.batteryCurrent ?? 0;
   const iinv = pf.inverterCurrent ?? 0;
   const imppt = pf.mpptCurrent ?? 0;
@@ -71,22 +96,26 @@ export function PowerFlowView({ powerFlow }: { powerFlow?: PowerFlow }) {
             accent="warn"
           />
 
-          {/* Arrows */}
-          <div className="flex flex-col items-center justify-center gap-1 py-2">
+          {/* Arrows — v4.1.1 audit: accessibility text label alongside color
+              (brief §37 "Do not use red/green colors as the only indication") */}
+          <div className="flex flex-col items-center justify-center gap-1 py-2" aria-label="Power flow direction">
             <div className="flex items-center gap-1">
               {mpptProducing && (isCharging || !isDischarging) ? (
-                <ArrowRight className="w-3 h-3 text-status-warn" />
+                <ArrowRight className="w-3 h-3 text-status-warn" aria-hidden="true" />
               ) : null}
               {isDischarging ? (
-                <ArrowLeft className="w-3 h-3 text-status-info" />
+                <ArrowLeft className="w-3 h-3 text-status-info" aria-hidden="true" />
               ) : null}
             </div>
-            <Battery className={cn('w-5 h-5', isCharging ? 'text-status-on' : isDischarging ? 'text-status-warn' : 'text-muted-foreground')} />
+            <Battery className={cn('w-5 h-5', isCharging ? 'text-status-on' : isDischarging ? 'text-status-warn' : 'text-muted-foreground')} aria-hidden="true" />
             <div className="flex items-center gap-1">
               {(isCharging || isDischarging) && (
-                <ArrowDown className="w-3 h-3 text-muted-foreground" />
+                <ArrowDown className="w-3 h-3 text-muted-foreground" aria-hidden="true" />
               )}
             </div>
+            <span className="text-[9px] text-muted-foreground uppercase tracking-wider mt-1">
+              {isCharging ? 'Charging' : isDischarging ? 'Discharging' : 'Idle'}
+            </span>
           </div>
 
           {/* Inverter */}

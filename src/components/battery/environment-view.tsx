@@ -12,7 +12,24 @@ import { Thermometer, Droplets, Wind } from 'lucide-react';
 import type { EnvironmentStatus } from '@/lib/types';
 
 export function EnvironmentView({ environment }: { environment?: EnvironmentStatus }) {
-  if (!environment) return null;
+  // v4.1.1 audit: explicit UNAVAILABLE placeholder (brief §46, §59)
+  if (!environment) {
+    return (
+      <Card className="overflow-hidden border-border/60 opacity-60">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <div className="rounded-lg bg-muted/30 p-1.5">
+              <Wind className="w-4 h-4 text-muted-foreground" />
+            </div>
+            <CardTitle className="text-sm font-semibold">Environment (Ambient)</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground">SHT31 not available.</p>
+        </CardContent>
+      </Card>
+    );
+  }
   const t = environment.temperature;
   const h = environment.humidity;
   const valid = environment.valid && t != null && h != null;
