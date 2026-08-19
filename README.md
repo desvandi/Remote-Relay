@@ -1,128 +1,152 @@
-# Timer Digital Relay v4.2 — Remote Relay System (Industrial-Grade)
+# Timer Digital Relay v4.3 — Remote Relay System (Industrial-Grade R2)
 
-> Next.js 16 PWA dashboard for controlling 12 relay channels + 4 PIR sensors + PZEM-004T power meter + 8S LiFePO4 battery monitoring (INA219/ADS1115/SHT31) via ESP32. Cloud-ready, MQTT remote access (works behind CGNAT/MiFi — no port forwarding needed), AI insights via Gemini. **Strongly-typed telemetry** (no `any`) with explicit null handling for invalid sensor readings (never silent 0).
+> **Status: 🟡 NOT PRODUCTION READY — HARDENING ROUND REQUIRED** (per ChatGPT audit)
+>
+> Next.js 16 PWA dashboard for controlling 12 relay channels + 4 PIR sensors + PZEM-004T power meter + 8S LiFePO4 battery monitoring (INA219/ADS1115/SHT31) via ESP32. **Formal command state model** — `COMMAND_PENDING → CONFIRMED_ON/OFF | TIMEOUT (UNKNOWN) | FAILED | DEVICE_OFFLINE | STATE_DRIFT`. Cloud-ready, MQTT remote access (works behind CGNAT/MiFi — no port forwarding needed), AI insights via Gemini. **Strongly-typed telemetry** (no `any`) with explicit null handling for invalid sensor readings (never silent 0). **Separate desired/reported/physical state semantics** (PWA never assumes "button pressed = relay ON").
 
 [![PWA](https://img.shields.io/badge/PWA-installable-blue)](#)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](#)
-[![Industrial Grade](https://img.shields.io/badge/grade-industrial-orange)](#industrial-grade-hardening-v42)
+[![Industrial Grade](https://img.shields.io/badge/grade-industrial-orange)](#industrial-grade-hardening-v43)
 [![TypeScript Strict](https://img.shields.io/badge/TypeScript-strict-blue)](#)
+[![Status](https://img.shields.io/badge/status-NOT%20PROD%20READY%20—%20HARDENING%20ROUND-yellow)](#production-readiness-status)
 [![Security Audit](https://img.shields.io/badge/audit-round%2010K-brightgreen)](#)
 
 Companion firmware repo: **[desvandi/Firmware-code-gs_relaytimer](https://github.com/desvandi/Firmware-code-gs_relaytimer)**
 
 ---
 
-## ⚡ What's New in v4.2 (Industrial-Grade Hardening)
+## 🟡 Production Readiness Status
 
-v4.2 PWA mirrors the firmware v4.2 industrial-grade hardening:
+Per ChatGPT targeted remediation audit (v4.2 → v4.3), the following P1 blockers were addressed in PWA types:
 
-### Type Safety (audit brief §34, §73)
+| P1 ID | Issue | PWA Implementation (v4.3) |
+|---|---|---|
+| P1-005 | Separate desired/reported/physical state semantics | ✅ New `ChannelState` type with `desiredState`, `reportedState`, `physicalState` (nullable — null when no aux feedback), `stateConfidence`, `stateTimestamp`, `stateSequence`, `fault` |
+| P1-006 | COMMAND_TIMEOUT = UNKNOWN execution status | ✅ New `CommandExecutionState` union type with 8 explicit states: `COMMAND_PENDING`, `CONFIRMED_ON`, `CONFIRMED_OFF`, `TIMEOUT` (UNKNOWN execution — distinct from `FAILED`), `FAILED`, `DEVICE_OFFLINE`, `UNKNOWN`, `STATE_DRIFT` |
+| P1-007 | Command semantics classification | ✅ New `CommandSemantics` union type: `IDEMPOTENT_STATE` (SET_STATE: ON/OFF — replay-safe) vs `NON_IDEMPOTENT_ACTION` (PULSE/TOGGLE/START_MOTOR — NOT replay-safe); PWA labels each command so firmware can reject non-idempotent through transaction path |
+| P1-014 | Separate commandedState from physicalState | ✅ New `StateConfidence` union type: `SOFTWARE_ONLY` (GPIO commanded, no physical confirmation — current hardware limitation), `VERIFIED` (aux contact confirms — future HW), `UNKNOWN` (never commanded), `FAULT` (state drift or interlock violation) |
 
-- **Strict TypeScript types** for all new telemetry — no `any` shortcuts.
-  Added types: `HealthSnapshot`, `Alarm`, `RtcStatus`, `SensorStatus`,
-  `AlarmSeverity`. All new fields are optional (`?:`) so old firmware
-  (v4.0/v4.1) still works with the v4.2 PWA.
-- **Explicit null handling**: invalid sensor readings arrive as `null`,
-  never as silent `0` (audit brief §20-21, §38). UI shows "N/A" or
-  "UNAVAILABLE" placeholders instead of misleading "0 V" / "0 A".
-- **Accessibility**: PWA components include text labels alongside color
-  indicators (audit brief §37 — "Do not use red/green colors as the only
-  indication"). Battery cell tiles show state strings like "OK",
-  "I2C ERR", "TAP FAULT", "INVALID", "RANGE", "STALE".
+### Remaining PWA items (not blocking but recommended):
 
-### New Dashboard Sections
-
-The dashboard now has the following sections (in addition to the existing
-relay grid, PZEM power meter, scheduler, logs, OTA, settings):
-
-1. **Battery Summary** — Pack voltage, battery current, battery power,
-   SOC, charged/discharged Ah, ambient T/H
-2. **DC Power Flow** — MPPT/Battery/Inverter with direction derived from
-   signed power (NOT hard-coded — brief §36)
-3. **Cell Monitor** — 8-cell voltage grid + min/max/delta with text
-   status labels
-4. **Battery Health** — Pack + per-cell resistance + measurement quality
-5. **Environment** — Ambient T/RH clearly labeled as ambient
-6. **Battery Diagnostics** — 15 fault flags + overall severity
-   (NORMAL/WARNING/FAULT/UNAVAILABLE)
-
-### v4.2 Telemetry Fields
-
-```typescript
-// From src/lib/types.ts
-type SystemStatus = {
-  // ... existing v4.0 fields (firmwareVersion, channels, pirs, schedules,
-  //   stats, PZEM, alarms) ...
-  battery?: BatteryStatus;      // v4.1
-  powerFlow?: PowerFlow;         // v4.1
-  environment?: EnvironmentStatus;  // v4.1
-  dcEnergy?: EnergyCounters;     // v4.1 (separate from PZEM `energy`)
-  health?: HealthSnapshot;       // v4.2 — §44
-  systemAlarms?: Alarm[];        // v4.2 — §60 (distinct from PZEM `alarms`)
-  telemetrySequence?: number;    // v4.2 — §22 monotonic counter
-};
-```
-
-### Demo Mode
-
-PWA continues to work in demo mode (no ESP32 hardware required). Mock store
-generates realistic 8S LiFePO4 telemetry at ~26.4 V pack with signed
-currents (charging during day, discharging at night).
+- Render `CommandExecutionState` in UI (currently the relay card shows simple ON/OFF — future enhancement to display TIMEOUT/UNKNOWN distinctly)
+- Render `StateConfidence::SOFTWARE_ONLY` badge on relay cards (honest disclosure that current hardware has no aux contact feedback)
+- Implement PWA-side command retry policy with backoff + jitter (currently only single attempt + TIMEOUT)
+- Add Auth Gateway for short-lived MQTT credentials (architectural — P1-015 in firmware repo)
 
 ---
 
-## 🏭 Industrial-Grade Hardening (v4.2)
+## ⚡ What's New in v4.3 (ChatGPT Targeted Remediation)
 
-### PWA Authoritative State (audit brief §57)
+v4.3 PWA implements the 4 type-level P1 blockers identified by ChatGPT's source-code re-audit. Per the audit directive: "DO NOT ADD FEATURES RANDOMLY." This is targeted remediation, not feature addition.
+
+### New Type Definitions (src/lib/types.ts)
+
+```typescript
+// P1-006: Command execution state model (8 explicit states)
+export type CommandExecutionState =
+  | 'COMMAND_PENDING'        // sent, waiting for ACK
+  | 'CONFIRMED_ON'           // ACK received, channel is ON
+  | 'CONFIRMED_OFF'          // ACK received, channel is OFF
+  | 'TIMEOUT'                // no ACK within timeout — UNKNOWN execution
+  | 'FAILED'                 // ACK received with success=false
+  | 'DEVICE_OFFLINE'         // device not reachable
+  | 'UNKNOWN'                // never commanded, or state indeterminate
+  | 'STATE_DRIFT';           // desired != reported for sustained period
+
+// P1-007: Command semantics (firmware rejects non-idempotent through transaction path)
+export type CommandSemantics =
+  | 'IDEMPOTENT_STATE'        // SET_STATE: ON, OFF, SET_MODE — replay-safe
+  | 'NON_IDEMPOTENT_ACTION';  // PULSE, TOGGLE, START_MOTOR, etc. — NOT replay-safe
+
+// P1-005, P1-014: Per-channel state architecture
+export type StateConfidence =
+  | 'SOFTWARE_ONLY'  // GPIO commanded, no physical confirmation
+  | 'VERIFIED'       // Auxiliary contact confirms physical state (future HW)
+  | 'UNKNOWN'        // Never commanded, or boot state indeterminate
+  | 'FAULT';         // State drift detected or interlock violation
+
+export type ChannelState = {
+  desiredState: boolean;
+  reportedState: boolean;
+  physicalState: boolean | null;
+  stateConfidence: StateConfidence;
+  stateTimestamp: number;
+  stateSequence: number;
+  fault: boolean;
+};
+```
+
+### Why TIMEOUT ≠ FAILED (P1-006)
+
+Per ChatGPT audit: "Karena timeout berarti: 'kita tidak tahu apakah command telah dieksekusi'. Bukan: 'command pasti gagal'."
+
+When PWA sends a relay command and doesn't receive an ACK within 5 seconds:
+- **TIMEOUT** — the command may or may not have been executed. The device could have received it, executed the relay transition, but failed to publish the ACK (MQTT broker down, ESP32 crashed after GPIO write, etc.). UI must show TIMEOUT, NOT "OFF".
+- **FAILED** — explicit reject. The device ACK'd with `success=false`. The command was definitely NOT executed.
+
+PWA rendering these states distinctly prevents operator confusion: a TIMEOUT operator can manually verify the physical state before retrying, rather than assuming the previous command failed and re-issuing blindly.
+
+### Why physicalState is nullable (P1-014)
+
+Per ChatGPT audit: "Jangan menyebut software GPIO state sebagai physical confirmed state tanpa feedback hardware."
+
+The current hardware has NO auxiliary contact feedback — only GPIO output. So:
+- `reportedState` = what device ACK'd (software state — what GPIO was commanded)
+- `physicalState` = what's actually energized at the relay contact
+
+Without aux feedback, `physicalState` is `null` (UNKNOWN). PWA must never render `reportedState` as if it were `physicalState`. A future hardware revision with aux contact feedback would set `physicalState` to a real boolean and `stateConfidence` to `VERIFIED`.
+
+### Command Semantics (P1-007)
+
+Per ChatGPT audit: "logical idempotency ≠ physical side-effect idempotency"
+
+PWA must label each command with `CommandSemantics`:
+- `IDEMPOTENT_STATE` — ON, OFF, SET_MODE. Replaying these is safe (ON twice = still ON).
+- `NON_IDEMPOTENT_ACTION` — PULSE, TOGGLE, START_MOTOR, TRIGGER_CONTACTOR, RESET. Replaying these is NOT safe (TOGGLE twice = no change, but contactor cycled twice = wear + possible fault).
+
+Firmware `CommandArbiter::processCommand()` rejects `NON_IDEMPOTENT_ACTION` through the transactional path with `RELAY_INTERLOCK_VIOLATION` alarm. PWA must use these semantics only for non-transactional direct commands (e.g., commissioning mode test triggers).
+
+---
+
+## 🏭 Industrial-Grade Hardening (v4.3)
+
+### PWA Authoritative State Model (audit brief §57, P1-006)
 
 PWA NEVER assumes "button pressed = relay ON". The valid state flow is:
 
 ```
 COMMAND_PENDING → (await device ACK) → CONFIRMED_ON / CONFIRMED_OFF
-                                            ↘ TIMEOUT / FAILED / DEVICE_OFFLINE
+                                            ↘ TIMEOUT (UNKNOWN — device may have executed)
+                                            ↘ FAILED (explicit reject — device did NOT execute)
+                                            ↘ DEVICE_OFFLINE (no ACK possible)
+                                            ↘ STATE_DRIFT (desired != reported for sustained period)
 ```
-
-When a command is sent, the PWA shows a "PENDING" state. The actual
-relay state is determined by the device's next status publication. If
-the device doesn't confirm within the ACK timeout, the PWA shows
-"TIMEOUT" (not "OFF" — operators must know the command may not have
-executed).
 
 ### Offline Behavior (audit brief §58)
 
 When the device is offline:
-
 - PWA shows the last known state with a "STALE" timestamp
 - PWA does NOT claim real-time
-- PWA queues only safe commands (manual relay toggles) — never schedules
-  or factory reset commands
-- Queued commands are sent on reconnect (with proper requestId + ACK
-  waiting per audit brief §24-27)
+- PWA queues only safe commands (manual relay toggles) — never schedules or factory reset commands
+- Queued commands are sent on reconnect (with proper requestId + ACK waiting per audit brief §24-27)
 
 ### Compatibility Matrix (audit brief §66)
 
 | PWA Version | Firmware Version | Protocol Version | Notes |
 |---|---|---|---|
-| v4.2.x | v4.2.x | v4 | Full feature set — health, alarms, telemetry sequence |
-| v4.2.x | v4.1.x | v3 | Battery + power flow + environment (no health/alarms) |
-| v4.2.x | v4.0.x | v2 | Legacy — relay + PZEM only |
-| v4.1.x | v4.2.x | v3 | Backward-compatible — v4.1 PWA ignores new v4.2 fields |
+| v4.3.x | v4.3.x | 5 | Full feature set — command arbiter + interlock + health state machine |
+| v4.3.x | v4.2.x | 4 | Battery + power flow + environment + health + alarms (no arbiter/interlock) |
+| v4.3.x | v4.1.x | 3 | Battery + power flow + environment (no health/alarms) |
+| v4.3.x | v4.0.x | 2 | Legacy — relay + PZEM only |
+| v4.2.x | v4.3.x | 4 | v4.2 PWA ignores new v4.3 fields (ChannelState, CommandSemantics) |
 
-See [COMPATIBILITY_MATRIX.md](../Firmware-code-gs_relaytimer/COMPATIBILITY_MATRIX.md)
-in the firmware repo for full details.
+See [COMPATIBILITY_MATRIX.md](../Firmware-code-gs_relaytimer/COMPATIBILITY_MATRIX.md) in the firmware repo for full details.
 
-### Battery UI Components
+---
 
-All battery UI components live under `src/components/battery/`:
+## 🔧 Existing v4.0/v4.1/v4.2 Documentation
 
-| Component | Brief § | Purpose |
-|---|---|---|
-| `battery-summary.tsx` | 35 | Pack V/I/P/SOC + charged/discharged Ah + ambient T/H |
-| `cell-monitor-view.tsx` | 37 | 8-cell voltage grid + min/max/delta + text status labels |
-| `power-flow-view.tsx` | 36 | MPPT/Battery/Inverter with signed-power-derived direction |
-| `battery-health-view.tsx` | 38 | Pack + per-cell resistance + quality + "Not available" when invalid |
-| `environment-view.tsx` | 39 | Ambient T/RH clearly labeled as ambient |
-| `battery-diagnostics-view.tsx` | 30, 59 | 15 fault flags + overall severity |
+The sections below are preserved from previous versions. They remain accurate for all existing features. The v4.3 additions are layered on top — no existing behavior has been removed.
 
 ---
 

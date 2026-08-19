@@ -263,6 +263,62 @@ export type Alarm = {
   message: string;
 };
 
+// v4.3 audit P1-006: Per ChatGPT audit:
+//   "UI harus membedakan: COMMAND_TIMEOUT dengan COMMAND_FAILED dan
+//    UNKNOWN_EXECUTION_STATUS. Karena timeout berarti: 'kita tidak tahu
+//    apakah command telah dieksekusi'. Bukan: 'command pasti gagal'."
+//
+// This is the authoritative state model for PWA command tracking.
+// PWA MUST NOT assume button-pressed = relay-ON. The state transitions:
+//   COMMAND_PENDING → CONFIRMED_ON / CONFIRMED_OFF (ACK success=true)
+//                  ↘ TIMEOUT (UNKNOWN — device may have executed, may not have)
+//                  ↘ FAILED (ACK success=false explicit reject)
+//                  ↘ DEVICE_OFFLINE (no ACK possible)
+//                  ↘ STATE_DRIFT (desired != reported for sustained period)
+export type CommandExecutionState =
+  | 'COMMAND_PENDING'        // sent, waiting for ACK
+  | 'CONFIRMED_ON'           // ACK received, channel is ON
+  | 'CONFIRMED_OFF'          // ACK received, channel is OFF
+  | 'TIMEOUT'                // no ACK within timeout — UNKNOWN execution
+  | 'FAILED'                 // ACK received with success=false
+  | 'DEVICE_OFFLINE'         // device not reachable
+  | 'UNKNOWN'                // never commanded, or state indeterminate
+  | 'STATE_DRIFT';           // desired != reported for sustained period
+
+// v4.3 audit P1-007: Per ChatGPT audit:
+//   "commandSemantics: IDEMPOTENT_STATE, NON_IDEMPOTENT_ACTION
+//    dan firmware menolak NON_IDEMPOTENT_ACTION melalui transaction path
+//    yang belum mempunyai physical transaction semantics."
+//
+// PWA must label each command with its semantics so firmware can reject
+// non-idempotent actions (PULSE, TOGGLE, START_MOTOR, TRIGGER_CONTACTOR,
+// RESET) through the transactional (replay-safe) path.
+export type CommandSemantics =
+  | 'IDEMPOTENT_STATE'        // SET_STATE: ON, OFF, SET_MODE — replay-safe
+  | 'NON_IDEMPOTENT_ACTION';  // PULSE, TOGGLE, START_MOTOR, etc. — NOT replay-safe
+
+// v4.3 audit P1-005, P1-014: Per ChatGPT audit:
+//   "desiredState, reportedState, physicalState, stateConfidence,
+//    stateTimestamp, stateSequence, fault"
+//
+//   "Jangan menyebut software GPIO state sebagai physical confirmed state
+//    tanpa feedback hardware."
+export type StateConfidence =
+  | 'SOFTWARE_ONLY'  // GPIO commanded, no physical confirmation
+  | 'VERIFIED'       // Auxiliary contact confirms physical state (future HW)
+  | 'UNKNOWN'        // Never commanded, or boot state indeterminate
+  | 'FAULT';         // State drift detected or interlock violation
+
+export type ChannelState = {
+  desiredState: boolean;          // what operator/automation requested
+  reportedState: boolean;          // what device ACK'd (software state)
+  physicalState: boolean | null;   // physical confirmed (null=UNKNOWN without aux feedback)
+  stateConfidence: StateConfidence;
+  stateTimestamp: number;         // ms since boot of last state change
+  stateSequence: number;          // monotonic per-channel counter
+  fault: boolean;                 // true if state drift or interlock violation
+};
+
 export type SystemStatus = {
   firmwareVersion: string;
   buildDate: string;
