@@ -40,12 +40,21 @@ export type Channel = {
   pirEnabled: boolean;     // PIR override enabled
   pirHoldTime: number;     // seconds, PIR hold time
   // Read-only runtime state:
-  state: boolean;          // actual relay state
+  state: boolean;          // actual relay state (legacy — = reportedState)
   source: RelaySource;     // why it's currently ON/OFF
   hasPir: boolean;         // PIR sensor mapped to this channel (ch 9-12)
   // Energy monitoring (software-estimated)
   energyWh?: number;       // accumulated watt-hours since last reset
   wattage?: number;        // user-configured load wattage (W)
+  // v4.3.1 audit D-002, D-005, D-007, D-014: state architecture
+  desiredState?: boolean;          // what operator/automation requested
+  reportedState?: boolean;         // what device ACK'd (software GPIO state)
+  physicalState?: boolean | null;   // null = UNKNOWN (no aux feedback)
+  stateConfidence?: StateConfidence;
+  stateSequence?: number;
+  stateTimestamp?: number;
+  fault?: boolean;
+  safetyLockoutState?: SafetyLockoutState;
 };
 
 // ---------- SCHEDULE ----------
@@ -318,6 +327,26 @@ export type ChannelState = {
   stateSequence: number;          // monotonic per-channel counter
   fault: boolean;                 // true if state drift or interlock violation
 };
+
+// v4.3.1 audit D-007: Safety lockout state machine per ChatGPT audit:
+//   NORMAL → TRIPPED → ACKNOWLEDGED → CLEARED → ARMED → NORMAL
+// Per audit: "Acknowledgement ≠ permission. ACK = operator has seen alarm.
+//   CLEAR = system may re-enable relay."
+export type SafetyLockoutState =
+  | 'NORMAL'        // no safety trip, relay controllable
+  | 'TRIPPED'       // maxOnTime triggered, relay FORCED OFF, no re-enable
+  | 'ACKNOWLEDGED'  // operator saw alarm, lockout STILL ACTIVE
+  | 'CLEARED'       // operator cleared lockout, relay still OFF but can re-enable
+  | 'ARMED';        // system armed, normal operation resumes
+
+// v4.3.1 audit D-002: physicalState must be nullable (null = UNKNOWN, not false)
+// StateConfidence semantics (per ChatGPT audit):
+//   VERIFIED      — hardware feedback confirms physical state
+//   SOFTWARE_ONLY — GPIO commanded, no physical confirmation (current HW limit)
+//   UNKNOWN       — cannot determine state (never commanded or boot)
+//   FAULT         — feedback shows abnormal condition
+// PWA must NEVER render SOFTWARE_ONLY as VERIFIED.
+// PWA must NEVER render physicalState=false as "OFF" when confidence != VERIFIED.
 
 export type SystemStatus = {
   firmwareVersion: string;
