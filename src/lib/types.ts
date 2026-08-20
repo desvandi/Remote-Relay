@@ -453,6 +453,8 @@ export type OtaHistoryEntry = {
 };
 
 // ---------- AI INSIGHTS (advisory only — Gemini via GAS) ----------
+// PH5 (schema sync): AiInsight is the CANONICAL type definition.
+// PH6 (actuator isolation): advisoryOnly is always true for Gemini insights.
 export type InsightSeverity = 'info' | 'warning' | 'critical';
 
 export type InsightCategory =
@@ -461,8 +463,7 @@ export type InsightCategory =
   | 'fault_detection'
   | 'predictive_maintenance'
   | 'pir_recommendation'
-  | 'battery_analysis';  // v4.1 (brief §42) — advisory insights on cell imbalance,
-                          // pack/cell resistance, power-flow, inverter efficiency
+  | 'battery_analysis';
 
 export type AiInsight = {
   id: string;
@@ -470,14 +471,27 @@ export type AiInsight = {
   severity: InsightSeverity;
   title: string;
   body: string;
-  channelId?: number;
+  channelId?: number | null;
   action?: {
     label: string;
     type: 'apply_suggestion' | 'review' | 'dismiss';
     payload?: Record<string, unknown>;
   };
   generatedAt: number;
-  source: 'gemini-mock';
+  // PH5: 'gemini-mock' was wrong — GAS returns either 'gemini' or 'mock'.
+  source: 'gemini' | 'mock';
+  // PH6: AI insights are advisory only.
+  advisoryOnly?: boolean;
+};
+
+// PH2-1: ESP32 /api/insights envelope.
+export type InsightsEnvelope = {
+  success: boolean;
+  insights?: AiInsight[];
+  cached?: boolean;
+  mock?: boolean;
+  error?: string;
+  message?: string;
 };
 
 // ---------- RELAY MUTATION ----------

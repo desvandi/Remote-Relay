@@ -8,6 +8,7 @@ import { LanguageProvider } from "@/components/providers/language-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { MqttProvider } from "@/components/providers/mqtt-provider";
+import { CompatibilityBanner } from "@/components/compatibility-banner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -87,6 +88,7 @@ export default function RootLayout({
             <QueryProvider>
               <MqttProvider>
                 <AuthProvider>
+                  <CompatibilityBanner />
                   {children}
                   <Toaster />
                   <SonnerToaster position="top-right" richColors closeButton />

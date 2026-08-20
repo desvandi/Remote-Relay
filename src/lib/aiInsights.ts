@@ -1,29 +1,13 @@
 // =============================================================================
-// AI Insights — fetch from Google Apps Script Web App
-// GAS calls Gemini API, caches results for 1 hour
+// AI Insights — Phase 2.1 (security rework) + Phase 5 (schema sync) + Phase 6 (actuator isolation)
 // =============================================================================
-
 import { useQuery } from '@tanstack/react-query';
+import { api, ApiError } from './api';
+import type { AiInsight } from './types';
 
-const GAS_URL = process.env.NEXT_PUBLIC_GAS_INSIGHTS_URL || '';
-const POLL_INTERVAL_MS = 5 * 60 * 1000;  // 5 minutes
+const POLL_INTERVAL_MS = 5 * 60 * 1000;
 
-export type AiInsight = {
-  id: string;
-  category: 'habit_analysis' | 'energy_analysis' | 'fault_detection' | 'predictive_maintenance' | 'pir_recommendation';
-  severity: 'info' | 'warning' | 'critical';
-  title: string;
-  body: string;
-  channelId?: number | null;
-  action?: {
-    label: string;
-    type: 'apply_suggestion' | 'review' | 'dismiss';
-  };
-  generatedAt: number;
-  source: 'gemini' | 'mock';
-};
-
-type GasResponse = {
+type InsightsResponse = {
   success: boolean;
   insights?: AiInsight[];
   cached?: boolean;
@@ -32,84 +16,73 @@ type GasResponse = {
   message?: string;
 };
 
-export function useAiInsights(mac: string | null) {
+// PH2-1: PWA fetches from ESP32's authenticated /api/insights endpoint.
+export function useAiInsights(deviceId: string | null) {
   return useQuery({
-    queryKey: ['ai-insights', mac],
+    queryKey: ['ai-insights', deviceId],
     queryFn: async (): Promise<AiInsight[]> => {
-      if (!GAS_URL) {
-        // GAS not configured — return mock insights
+      if (!deviceId) {
         return getMockInsights();
       }
-      if (!mac) {
+      try {
+        const envelope = await api.insights();
+        const insights = envelope.insights || [];
+        return insights.filter(ins => isValidInsight_(ins));
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          return getMockInsights();
+        }
+        console.warn('[aiInsights] fetch failed, falling back to mock:', err);
         return getMockInsights();
       }
-
-      const url = `${GAS_URL}?action=insights&mac=${mac}`;
-      const res = await fetch(url, {
-        method: 'GET',
-        // GAS Web Apps need no-cors mode sometimes, but try normal first
-      });
-
-      if (!res.ok) {
-        throw new Error(`GAS request failed: ${res.status}`);
-      }
-
-      const data: GasResponse = await res.json();
-      if (!data.success) {
-        throw new Error(data.error || 'GAS returned error');
-      }
-
-      return data.insights || [];
     },
-    enabled: !!mac,
+    enabled: !!deviceId,
     refetchInterval: POLL_INTERVAL_MS,
     staleTime: POLL_INTERVAL_MS,
   });
 }
 
-export function isGasConfigured(): boolean {
-  return !!GAS_URL;
+const ALLOWED_CATEGORIES = [
+  'habit_analysis', 'energy_analysis', 'fault_detection',
+  'predictive_maintenance', 'pir_recommendation', 'battery_analysis',
+] as const;
+const ALLOWED_SEVERITIES = ['info', 'warning', 'critical'] as const;
+const ALLOWED_ACTION_TYPES = ['apply_suggestion', 'review', 'dismiss'] as const;
+
+function isValidInsight_(ins: unknown): ins is AiInsight {
+  if (!ins || typeof ins !== 'object') return false;
+  const i = ins as Record<string, unknown>;
+  if (typeof i.id !== 'string' || !i.id) return false;
+  if (typeof i.category !== 'string' || !(ALLOWED_CATEGORIES as readonly string[]).includes(i.category)) return false;
+  if (typeof i.severity !== 'string' || !(ALLOWED_SEVERITIES as readonly string[]).includes(i.severity)) return false;
+  if (typeof i.title !== 'string' || !i.title) return false;
+  if (typeof i.body !== 'string' || !i.body) return false;
+  if (i.channelId != null && (typeof i.channelId !== 'number' || i.channelId < 1 || i.channelId > 12)) return false;
+  if (typeof i.generatedAt !== 'number') return false;
+  if (typeof i.source !== 'string' || !['gemini', 'mock'].includes(i.source)) return false;
+  if (i.action != null) {
+    if (typeof i.action !== 'object') return false;
+    const a = i.action as Record<string, unknown>;
+    if (typeof a.label !== 'string') return false;
+    if (typeof a.type !== 'string' || !(ALLOWED_ACTION_TYPES as readonly string[]).includes(a.type)) return false;
+  }
+  if (i.advisoryOnly === false) return false;
+  return true;
 }
 
-export function getGasUrl(): string {
-  return GAS_URL;
-}
-
-// Mock insights (shown when GAS is not configured or no data yet)
 function getMockInsights(): AiInsight[] {
   return [
     {
       id: 'mock-1',
       category: 'habit_analysis',
       severity: 'info',
-      title: 'AI Insights Not Configured',
-      body: 'Deploy Google Apps Script (Code.gs) and set NEXT_PUBLIC_GAS_INSIGHTS_URL in Vercel to enable AI analysis via Gemini. See README for setup instructions.',
+      title: 'Waiting for AI insights',
+      body: 'Once the ESP32 begins posting logs to Google Apps Script, Gemini will analyze device patterns.',
       channelId: null,
       action: { label: 'Dismiss', type: 'dismiss' },
       generatedAt: Date.now(),
       source: 'mock',
-    },
-    {
-      id: 'mock-2',
-      category: 'energy_analysis',
-      severity: 'warning',
-      title: 'Energy monitoring active',
-      body: 'ESP32 is tracking Wh per relay. Connect GAS to get AI-powered energy recommendations based on actual usage patterns.',
-      channelId: null,
-      action: { label: 'Review', type: 'review' },
-      generatedAt: Date.now(),
-      source: 'mock',
-    },
-    {
-      id: 'mock-3',
-      category: 'fault_detection',
-      severity: 'info',
-      title: 'System healthy',
-      body: 'All relays responding normally. No faults detected in recent logs.',
-      channelId: null,
-      action: { label: 'Dismiss', type: 'dismiss' },
-      generatedAt: Date.now(),
-      source: 'mock',
+      advisoryOnly: true,
     },
   ];
 }

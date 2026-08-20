@@ -1,7 +1,9 @@
 'use client';
 
 import { useMqtt } from '@/components/providers/mqtt-provider';
-import { useAiInsights, isGasConfigured } from '@/lib/aiInsights';
+// PH2-1: isGasConfigured/getGasUrl removed from aiInsights.ts.
+import { useAiInsights } from '@/lib/aiInsights';
+import type { AiInsight } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +15,7 @@ import {
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-type InsightCategory = 'habit_analysis' | 'energy_analysis' | 'fault_detection' | 'predictive_maintenance' | 'pir_recommendation';
+type InsightCategory = 'habit_analysis' | 'energy_analysis' | 'fault_detection' | 'predictive_maintenance' | 'pir_recommendation' | 'battery_analysis';
 type InsightSeverity = 'info' | 'warning' | 'critical';
 
 const CATEGORY_META: Record<InsightCategory, { icon: React.ComponentType<{ className?: string }>; color: string }> = {
@@ -22,6 +24,7 @@ const CATEGORY_META: Record<InsightCategory, { icon: React.ComponentType<{ class
   fault_detection: { icon: AlertTriangle, color: 'text-status-error' },
   predictive_maintenance: { icon: Wrench, color: 'text-status-warn' },
   pir_recommendation: { icon: Radar, color: 'text-status-info' },
+  battery_analysis: { icon: ShieldCheck, color: 'text-status-info' },
 };
 
 const SEVERITY_META: Record<InsightSeverity, { color: string; bg: string; label: string }> = {
@@ -36,13 +39,15 @@ const CATEGORY_LABELS: Record<InsightCategory, string> = {
   fault_detection: 'Fault Detection',
   predictive_maintenance: 'Predictive Maintenance',
   pir_recommendation: 'PIR Recommendation',
+  battery_analysis: 'Battery Analysis',
 };
 
 export function AiView() {
   
   const { deviceId } = useMqtt();
   const { data: insights, isLoading } = useAiInsights(deviceId);
-  const gasConfigured = isGasConfigured();
+  // PH2-1: gasConfigured is derived from insights' source field.
+  const gasConfigured = (insights ?? []).some(i => i.source === 'gemini');
 
   const onAction = (insightTitle: string, actionLabel: string) => {
     toast.success(`${actionLabel} — ${insightTitle}`);
@@ -90,12 +95,15 @@ export function AiView() {
         <div className="rounded-lg border border-status-warn/30 bg-status-warn/5 px-4 py-3 flex items-start gap-2.5">
           <Info className="w-4 h-4 text-status-warn flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm text-status-warn font-medium">AI Insights menggunakan data mock</p>
+            <p className="text-sm text-status-warn font-medium">AI Insights using mock data</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Untuk mengaktifkan AI analysis via Gemini: deploy Code.gs ke Google Apps Script,
-              lalu set env var <code className="font-mono bg-muted px-1 rounded">NEXT_PUBLIC_GAS_INSIGHTS_URL</code> di Vercel
-              dan paste URL yang sama di <code className="font-mono bg-muted px-1 rounded">Config.h</code> firmware.
-              Lihat README untuk panduan lengkap.
+              To enable AI analysis via Gemini: deploy Code.gs to Google Apps Script,
+              set <code className="font-mono bg-muted px-1 rounded">GAS_INSIGHTS_URL</code> in firmware
+              <code className="font-mono bg-muted px-1 rounded"> Config.h</code>, and set
+              <code className="font-mono bg-muted px-1 rounded"> GEMINI_API_KEY</code> in the
+              GAS Script Properties. The ESP32 will then proxy authenticated requests to GAS
+              and serve the results via <code className="font-mono bg-muted px-1 rounded">/api/insights</code>.
+              See README for the full setup guide.
             </p>
           </div>
         </div>

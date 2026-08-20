@@ -34,20 +34,26 @@ const LOG_FILE = path.join(DATA_DIR, 'mock-logs.json');
 // instead of attempting auth.
 // Checks both DEMO_MODE and NEXT_PUBLIC_DEMO_MODE so users only need to set
 // one var (NEXT_PUBLIC_* is exposed to the browser, regular DEMO_MODE is not).
-const DEMO_MODE = process.env.NODE_ENV === 'development'
+// PHASE 26 (demo mode isolation): In PRODUCTION builds, DEMO_MODE is FORCIBLY
+// false even if NEXT_PUBLIC_DEMO_MODE=true is set.
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const RAW_DEMO_MODE = process.env.NODE_ENV === 'development'
   || process.env.DEMO_MODE === 'true'
   || process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+const DEMO_MODE = IS_PRODUCTION ? false : RAW_DEMO_MODE;
 
-// audit-fixes (auditor #2 P0): PRODUCTION FAIL-CLOSED GUARD.
-//   In production (NODE_ENV === 'production' AND NOT demo mode), mock auth is
-//   HARD-DISABLED regardless of which env vars are set. This prevents an admin
-//   who accidentally leaves NEXT_PUBLIC_DEMO_MODE=true in Vercel production
-//   from exposing the dashboard with admin/admin123 credentials.
-//   To use mock auth on a production server, you MUST set NODE_ENV to something
-//   other than 'production' (e.g., 'staging') AND set JWT_SECRET + MOCK_USER +
-//   MOCK_PASSWORD explicitly. The defaults below are now empty in ALL modes
-//   except local dev — never in production.
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+if (IS_PRODUCTION) {
+  if (process.env.DEMO_MODE === 'true' || process.env.NEXT_PUBLIC_DEMO_MODE === 'true') {
+    console.error('[SECURITY] CRITICAL: DEMO_MODE/NEXT_PUBLIC_DEMO_MODE=true detected in production. Forcibly disabled.');
+  }
+  if (process.env.MOCK_USER || process.env.MOCK_PASSWORD) {
+    console.error('[SECURITY] CRITICAL: MOCK_USER/MOCK_PASSWORD detected in production. Mock auth forcibly disabled.');
+  }
+  if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
+    console.error('[SECURITY] CRITICAL: JWT_SECRET shorter than 32 bytes in production.');
+  }
+}
+
 const MOCK_AUTH_EXPLICITLY_ENABLED =
   Boolean(process.env.JWT_SECRET && process.env.MOCK_USER && process.env.MOCK_PASSWORD)
   && !IS_PRODUCTION;

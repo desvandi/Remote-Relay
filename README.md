@@ -1,4 +1,4 @@
-# Timer Digital Relay v4.3 — Remote Relay System
+# Timer Digital Relay v4.3.8 — Remote Relay System
 
 > Next.js 16 PWA dashboard for controlling 12 relay channels + 4 PIR sensors + PZEM-004T power meter + 8S LiFePO4 battery monitoring (INA219/ADS1115/SHT31) via ESP32. Cloud-ready, MQTT remote access (works behind CGNAT/MiFi), AI insights via Gemini. **Strongly-typed telemetry** (no `any`) with explicit null handling for invalid sensor readings (never silent 0). **Separate desired/reported/physical state semantics** — PWA never assumes "button pressed = relay ON".
 

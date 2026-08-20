@@ -19,6 +19,7 @@
 // =============================================================================
 
 import type { ApiResponse } from '@/lib/types';
+import { getCompatibilitySnapshot, IncompatibleFirmwareError } from './compatibility';
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
 
@@ -126,32 +127,49 @@ export const api = {
   status: () => request<import('@/lib/types').SystemStatus>('/api/status'),
   config: () => request<import('@/lib/types').SystemConfig>('/api/config'),
   version: () => request<import('@/lib/types').FirmwareInfo>('/api/version'),
+  // PH2-1: AI insights fetched from ESP32's authenticated /api/insights.
+  insights: () => request<import('@/lib/types').InsightsEnvelope>('/api/insights'),
   // Mutations — all REST mutations now send requestId for TransactionJournal contract (firmware C2-C5)
-  relay: (mutation: import('@/lib/types').RelayMutation) =>
-    request<{ channel: import('@/lib/types').Channel }>('/api/relay', {
+  relay: (mutation: import('@/lib/types').RelayMutation) => {
+    const compat = getCompatibilitySnapshot();
+    if (compat && !compat.canControl) throw new IncompatibleFirmwareError(compat.message);
+    return request<{ channel: import('@/lib/types').Channel }>('/api/relay', {
       method: 'POST',
       body: { ...mutation, requestId: generateRequestId() },
-    }),
-  channelRename: (channelId: number, name: string) =>
-    request<{ channel: { id: number; name: string } }>('/api/channel', {
+    });
+  },
+  channelRename: (channelId: number, name: string) => {
+    const compat = getCompatibilitySnapshot();
+    if (compat && !compat.canControl) throw new IncompatibleFirmwareError(compat.message);
+    return request<{ channel: { id: number; name: string } }>('/api/channel', {
       method: 'POST',
       body: { channelId, name, requestId: generateRequestId() },
-    }),
-  schedule: (sched: import('@/lib/types').Schedule) =>
-    request<{ schedule: import('@/lib/types').Schedule }>('/api/schedule', {
+    });
+  },
+  schedule: (sched: import('@/lib/types').Schedule) => {
+    const compat = getCompatibilitySnapshot();
+    if (compat && !compat.canControl) throw new IncompatibleFirmwareError(compat.message);
+    return request<{ schedule: import('@/lib/types').Schedule }>('/api/schedule', {
       method: 'POST',
       body: { ...sched, requestId: generateRequestId() },
-    }),
-  scheduleDelete: (id: number, channelId?: number) =>
-    request<{ deleted: boolean }>(
+    });
+  },
+  scheduleDelete: (id: number, channelId?: number) => {
+    const compat = getCompatibilitySnapshot();
+    if (compat && !compat.canControl) throw new IncompatibleFirmwareError(compat.message);
+    return request<{ deleted: boolean }>(
       `/api/schedule?id=${id}${channelId ? `&channelId=${channelId}` : ''}&requestId=${generateRequestId()}`,
       { method: 'DELETE' }
-    ),
-  pir: (id: number, opts: { enabled?: boolean; holdTime?: number }) =>
-    request<{ pir: import('@/lib/types').PIRState }>('/api/pir', {
+    );
+  },
+  pir: (id: number, opts: { enabled?: boolean; holdTime?: number }) => {
+    const compat = getCompatibilitySnapshot();
+    if (compat && !compat.canControl) throw new IncompatibleFirmwareError(compat.message);
+    return request<{ pir: import('@/lib/types').PIRState }>('/api/pir', {
       method: 'POST',
       body: { id, ...opts, requestId: generateRequestId() },
-    }),
+    });
+  },
   pirTest: (id: number) =>
     request<{ triggered: boolean }>('/api/pir/test', { method: 'POST', body: { id } }),
   time: (datetime: string) =>
