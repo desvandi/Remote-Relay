@@ -104,3 +104,45 @@ export async function setRelay(cfg, relayIndex, state, timerSec = 0, timeoutMs =
     timeoutMs
   );
 }
+
+// Fetch recent transaction logs from the Logs sheet.
+export async function getLogs(cfg, limit = 30, timeoutMs = 8000) {
+  return callGas(
+    cfg.gas_webapp_url,
+    { action: "GET_LOGS", token: cfg.auth_token, device: cfg.device_id, limit },
+    timeoutMs
+  );
+}
+
+// ---- Schedules (daily recurring relay ON/OFF) ----
+export async function listSchedules(cfg, timeoutMs = 8000) {
+  return callGas(
+    cfg.gas_webapp_url,
+    { action: "SCHEDULE_LIST", token: cfg.auth_token, device: cfg.device_id },
+    timeoutMs
+  );
+}
+
+export async function addSchedule(cfg, schedule, timeoutMs = 8000) {
+  return callGas(
+    cfg.gas_webapp_url,
+    { action: "SCHEDULE_ADD", token: cfg.auth_token, device: cfg.device_id, schedule },
+    timeoutMs
+  );
+}
+
+export async function deleteSchedule(cfg, id, timeoutMs = 8000) {
+  return callGas(
+    cfg.gas_webapp_url,
+    { action: "SCHEDULE_DELETE", token: cfg.auth_token, device: cfg.device_id, id },
+    timeoutMs
+  );
+}
+
+export async function toggleSchedule(cfg, id, enabled, timeoutMs = 8000) {
+  return callGas(
+    cfg.gas_webapp_url,
+    { action: "SCHEDULE_TOGGLE", token: cfg.auth_token, device: cfg.device_id, id, enabled },
+    timeoutMs
+  );
+}

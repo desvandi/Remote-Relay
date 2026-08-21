@@ -64,7 +64,7 @@ export default function Install() {
           <ChevronLeft size={16} /> Kembali
         </button>
 
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="inline-block bg-zinc-950/50 backdrop-blur-sm rounded-xl p-5 -m-2 sm:-m-3">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-11 h-11 rounded-lg bg-[#007AFF] flex items-center justify-center shadow-lg shadow-blue-500/30">
               <Cpu size={22} className="text-white" strokeWidth={2.5} />
@@ -127,7 +127,7 @@ export default function Install() {
             )}
           </div>
 
-          <p className="mt-4 font-mono text-[11px] text-zinc-600 break-all max-w-md">
+          <p className="mt-4 font-mono text-[11px] text-zinc-400 break-all max-w-md bg-zinc-950/60 border border-zinc-800 rounded px-3 py-1.5">
             manifest: {manifestUrl}
           </p>
         </motion.div>

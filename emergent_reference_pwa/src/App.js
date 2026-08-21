@@ -8,6 +8,7 @@ import AppShell from "@/components/AppShell";
 import Dashboard from "@/pages/Dashboard";
 import Setup from "@/pages/Setup";
 import Settings from "@/pages/Settings";
+import Schedules from "@/pages/Schedules";
 import Install from "@/pages/Install";
 
 function App() {
@@ -27,6 +28,7 @@ function App() {
                 }
               >
                 <Route path="/" element={<Dashboard />} />
+                <Route path="/schedules" element={<Schedules />} />
                 <Route path="/settings" element={<Settings />} />
               </Route>
             </Routes>

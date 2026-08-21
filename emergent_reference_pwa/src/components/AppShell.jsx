@@ -1,11 +1,12 @@
 import React from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { LayoutDashboard, Settings as SettingsIcon, Cpu, Zap } from "lucide-react";
+import { LayoutDashboard, CalendarClock, Settings as SettingsIcon, Cpu, Zap } from "lucide-react";
 import { useConfig } from "@/context/ConfigContext";
 
 const NAV = [
   { to: "/", label: "Dasbor", icon: LayoutDashboard, testid: "nav-dashboard" },
+  { to: "/schedules", label: "Jadwal", icon: CalendarClock, testid: "nav-schedules" },
   { to: "/settings", label: "Pengaturan", icon: SettingsIcon, testid: "nav-settings" },
   { to: "/install", label: "Flash Firmware", icon: Cpu, testid: "nav-install" },
 ];
