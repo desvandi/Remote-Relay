@@ -1,0 +1,17 @@
+{
+  "short_name": "RelayTimer",
+  "name": "Relay Timer Command Center",
+  "description": "Zero-Touch Deployment PWA untuk kontrol relay ESP32 via Google Apps Script",
+  "icons": [
+    {
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#09090B",
+  "background_color": "#09090B"
+}
